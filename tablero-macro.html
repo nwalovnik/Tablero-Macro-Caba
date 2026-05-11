@@ -1077,7 +1077,6 @@ function calRender() {
   const future = (cal.proximos || []).filter(x => x._dias >= 0);
   const rows = future.slice(0, 10);
   
-  // Blindaje: Si los elementos no existen en el HTML, la función termina en paz
   const elTag = document.getElementById('calTag');
   const elBody = document.getElementById('calBody');
   
