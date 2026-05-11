@@ -8,6 +8,7 @@ import json, os, re, sys, time
 import requests
 from io import BytesIO
 import openpyxl
+from datetime import datetime, timedelta
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 # PROJ ya no es necesario, usamos BASE para todo
@@ -52,14 +53,12 @@ def parse_pgb_variacion():
     print('[PGB var] descubriendo URL...', flush=True)
     url, title = find_xlsx_for_search('variacion porcentual producto geografico bruto trimestral')
     if not url:
-        # fallback URL conocida
         url = 'https://www.estadisticaciudad.gob.ar/eyc/wp-content/uploads/2025/12/PGB_K_variacion_porcentual.xlsx'
         title = 'Variación porcentual i.a. del PGB Trimestral por ClaNAE (fallback)'
     print(f'[PGB var] {url}', flush=True)
     wb = download_xlsx(url)
     ws = wb[wb.sheetnames[0]]
     rows = list(ws.iter_rows(values_only=True))
-    # Row 1 = header con años; Row 2 = subheader trimestres; Row 3+ = datos
     header = rows[1] or []
     sub = rows[2] or []
     year_cols = []
@@ -96,7 +95,6 @@ def parse_pgb_variacion():
             categorias.append(item)
     if not pgb_total:
         raise RuntimeError('PGB var: no se encontró fila "Producto Geográfico Bruto"')
-    # último trimestre con dato
     last_idx = len(trimestres) - 1
     while last_idx >= 0 and pgb_total['valores'][last_idx] is None:
         last_idx -= 1
@@ -121,8 +119,6 @@ def parse_pgb_variacion():
 
 # ─── PGB · nivel (precios constantes 2004) por categoría ──────────
 def parse_pgb_nivel():
-    """Baja la serie de PGB en millones de pesos a precios de 2004 por ClaNAE.
-    Permite calcular peso de cada rama y serie de niveles."""
     print('[PGB nivel] descubriendo URL...', flush=True)
     url, title = find_xlsx_for_search('producto geografico bruto trimestral millones pesos 2004 ClaNAE')
     if not url:
@@ -174,7 +170,7 @@ def parse_pgb_nivel():
         'categorias': categorias,
     }
 
-# ─── IPCBA · apertura por rubro ────────────────────────────────────
+# ─── IPCBA · apertura por rubro (CORREGIDO Y ROBUSTO) ──────────────
 DIVISIONES = [
     'Alimentos y bebidas no alcohólicas','Bebidas alcohólicas y tabaco','Prendas de vestir y calzado',
     'Vivienda, agua, electricidad, gas y otros combustibles','Equipamiento y mantenimiento del hogar',
@@ -190,48 +186,84 @@ def parse_ipcba_rubros():
         url = 'https://www.estadisticaciudad.gob.ar/eyc/wp-content/uploads/2026/02/IPCBA_base_2021100-Principales_aperturas_indices.xlsx'
         title = 'IPCBA por aperturas (fallback)'
     print(f'[IPCBA rubros] {url}', flush=True)
+    
     wb = download_xlsx(url)
     ws = wb[wb.sheetnames[0]]
     rows = list(ws.iter_rows(values_only=True))
-    # Row idx 2 = serial dates (first cell empty); row idx 3 = Nivel General
-    date_row = rows[2] or []
+    
+    # 1. Encontrar dinámicamente la fila base ("Nivel General")
+    ng_idx = -1
+    for i, r in enumerate(rows):
+        if r and r[0] and str(r[0]).strip() == 'Nivel General':
+            ng_idx = i
+            break
+            
+    if ng_idx == -1:
+        raise RuntimeError("IPCBA rubros: No se encontró la fila 'Nivel General'")
+
+    # 2. Buscar la fila de fechas mirando hacia arriba desde Nivel General
     months = []
-    for c, v in enumerate(date_row):
-        if c == 0: continue
-        if isinstance(v, (int, float)) and v > 30000:
-            # Serial Excel a fecha (UNIX epoch 25569 = 1970-01-01)
-            try:
-                from datetime import datetime, timedelta
-                # Excel serial date base = 1899-12-30 (with the leap-year bug)
-                d = datetime(1899, 12, 30) + timedelta(days=int(v))
-                months.append({'col': c, 'ym': d.strftime('%Y-%m')})
-            except Exception:
-                pass
-        elif hasattr(v, 'strftime'):
-            months.append({'col': c, 'ym': v.strftime('%Y-%m')})
+    for offset in [1, 2, 3]:  # Probar la fila anterior, la otra, y la otra
+        date_row = rows[ng_idx - offset]
+        temp_months = []
+        for c, v in enumerate(date_row):
+            if c == 0: continue
+            ym = None
+            if isinstance(v, (int, float)) and v > 30000:
+                try:
+                    ym = (datetime(1899, 12, 30) + timedelta(days=int(v))).strftime('%Y-%m')
+                except Exception: pass
+            elif hasattr(v, 'strftime'):
+                ym = v.strftime('%Y-%m')
+            elif isinstance(v, str):
+                # Extrae fechas si vienen en texto (ej: "Ene-25" o "2025-01")
+                v_str = str(v).lower().strip()
+                m_mes = re.search(r'(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)[^\d]*(\d{2,4})', v_str)
+                m_num = re.search(r'(20\d{2})[-/](0[1-9]|1[0-2])', v_str)
+                if m_mes:
+                    dict_meses = {'ene':'01','feb':'02','mar':'03','abr':'04','may':'05','jun':'06','jul':'07','ago':'08','sep':'09','oct':'10','nov':'11','dic':'12'}
+                    yy = m_mes.group(2)
+                    if len(yy) == 2: yy = '20' + yy
+                    ym = f"{yy}-{dict_meses[m_mes.group(1)]}"
+                elif m_num:
+                    ym = f"{m_num.group(1)}-{m_num.group(2)}"
+            
+            if ym:
+                temp_months.append({'col': c, 'ym': ym})
+        
+        # Si encontró suficientes meses, esa es la fila correcta
+        if len(temp_months) > 12:
+            months = temp_months
+            break
+
     if len(months) < 13:
-        raise RuntimeError(f'IPCBA rubros: solo {len(months)} meses en el XLSX')
+        raise RuntimeError(f'IPCBA rubros: solo se extrajeron {len(months)} meses. El formato del Excel cambió drásticamente.')
+
     last_idx = len(months) - 1
     ia_idx = last_idx - 12
 
+    # 3. Extraer los datos de Nivel General y Divisiones
     def pick(name):
-        for r in rows[3:]:
+        for r in rows[ng_idx:]:
             cell = r[0] if r else None
             if cell and str(cell).strip() == name:
                 last = r[months[last_idx]['col']] if months[last_idx]['col'] < len(r) else None
                 prev = r[months[last_idx-1]['col']] if months[last_idx-1]['col'] < len(r) else None
                 ia   = r[months[ia_idx]['col']] if months[ia_idx]['col'] < len(r) else None
+                
                 if not isinstance(last, (int, float)): return None
                 return {
                     'nombre': name,
                     'indice': round(float(last), 2),
-                    'var_mensual': round((float(last)/float(prev)-1)*100, 2) if isinstance(prev, (int, float)) else None,
-                    'var_ia':      round((float(last)/float(ia)-1)*100, 2) if isinstance(ia, (int, float)) else None,
+                    'var_mensual': round((float(last)/float(prev)-1)*100, 2) if isinstance(prev, (int, float)) and float(prev)!=0 else None,
+                    'var_ia':      round((float(last)/float(ia)-1)*100, 2) if isinstance(ia, (int, float)) and float(ia)!=0 else None,
                 }
         return None
+
     ng = pick('Nivel General')
     divisiones = [pick(n) for n in DIVISIONES]
     divisiones = [d for d in divisiones if d]
+    
     return {
         'fuente': 'IDECBA · ' + url.split('/')[-1],
         'fuente_url': url,
@@ -243,7 +275,6 @@ def parse_ipcba_rubros():
 
 # ─── Industria · ingresos fabriles por rama (re-process for "peso") ──
 def industria_pesos(macro):
-    """Calcula peso porcentual de cada rama sobre la suma de ramas (escala consistente)."""
     ind = macro.get('industria_ingresos', {})
     ramas = ind.get('ramas', {})
     if not ramas: return None
@@ -289,7 +320,6 @@ def main():
         pgb_nivel = parse_pgb_nivel()
     except Exception as e:
         print(f'[PGB nivel] falló (no es crítico): {e}', flush=True)
-    # Si nivel falla, conservar pesos previos del JSON existente
     pesos_previos = None
     if not pgb_nivel and macro.get('pgb', {}).get('pesos_ultimo'):
         pesos_previos = {
@@ -313,7 +343,6 @@ def main():
     if pesos_previos:
         pgb.update(pesos_previos)
     if pgb_nivel:
-        # Peso sectorial sobre PGB total (último trimestre)
         last_idx = len(pgb_nivel['trimestres']) - 1
         while last_idx >= 0 and (pgb_nivel['pgb_total'] is None or pgb_nivel['pgb_total']['valores'][last_idx] is None):
             last_idx -= 1
@@ -332,11 +361,8 @@ def main():
     macro['pgb'] = pgb
     if 'iae' in macro:
         macro['_iae_legacy'] = macro.pop('iae')
-    # Sintetizo un alias `actividad` que conserva la forma esperada por el chart antiguo,
-    # pero con datos del PGB: var_ia trimestral, trimestres, e índice acumulado base=100 al primer dato.
     trims_lbl = [t['label'] for t in pgb['trimestres']]
     var_ia = pgb['pgb_total']['valores']
-    # Indice base 100 al primer trim usable
     idx = []
     base = None
     for v in var_ia:
@@ -346,12 +372,10 @@ def main():
             base = 100.0
             idx.append(round(base, 2))
         else:
-            # Sin un nivel real, dejamos el índice como cumulativo de variaciones (proxy)
             prev_idx = next((x for x in reversed(idx) if x is not None), None)
             if prev_idx is None:
                 idx.append(round(100.0, 2))
             else:
-                # No tenemos variación trimestre a trimestre, solo i.a.; dejamos índice usando i.a. como proxy
                 idx.append(round(prev_idx * (1 + (v - (var_ia[var_ia.index(v)-1] if var_ia.index(v) > 0 and var_ia[var_ia.index(v)-1] is not None else 0))/100), 2))
     macro['actividad'] = {
         'trimestres': trims_lbl,
@@ -374,7 +398,6 @@ def main():
         json.dump(macro, f, ensure_ascii=False, separators=(',', ':'))
     print(f'OK macro_data.json actualizado (PGB {len(pgb["categorias"])} cats; IPCBA rubros {len(rubros["divisiones"])}; industria pesos {len((ipesos or {}).get("pesos") or {})})', flush=True)
 
-    # Patch HTML files
     for h in HTML_FILES:
         patch_html(h, macro)
 
