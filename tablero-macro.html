@@ -1095,19 +1095,24 @@ function calRender(cal){
   }
   const rows=future.slice(0,15);
   const gen = cal.generado ? cal.generado.slice(0,10) : '';
-  document.getElementById('calTag').textContent = future.length+' próximas'+(gen?' · act. '+gen:'');
-  document.getElementById('calBody').innerHTML = rows.map(x=>{
-    const cls=x._dias<=14?'cal-row-soon':'cal-row-far';
-    const txt=x._dias===0?'hoy':'en '+x._dias+' d';
-    const lbl=x.url?'<a href="'+x.url+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;border-bottom:1px dotted currentColor">'+x.cat_label+'</a>':x.cat_label;
-    return '<tr>'+
-      '<td><b>'+lbl+'</b><div style="font-size:10.5px;color:var(--gray500);margin-top:2px">'+x.desc_corta+'</div></td>'+
-      '<td style="font-size:12px">'+(x.periodo||'—')+'</td>'+
-      '<td style="text-align:right;white-space:nowrap"><b>'+fmtD(x._d)+'</b><div class="'+cls+'" style="font-size:10.5px;margin-top:2px">'+txt+'</div></td>'+
-      '</tr>';
-  }).join('');
-}
-function calLoadInline(){
+  const elTag = document.getElementById('calTag');
+  if (elTag) {
+     elTag.textContent = future.length+' próximas'+(gen?' · act. '+gen:'');
+  }
+  const elBody = document.getElementById('calBody');
+  if (elBody) {
+     elBody.innerHTML = rows.map(x=>{
+         const cls=x._dias<=14?'cal-row-soon':'cal-row-far';
+         const txt=x._dias===0?'hoy':'en '+x._dias+' d';
+         const lbl=x.url?'<a href="'+x.url+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;border-bottom:1px dotted currentColor">'+x.cat_label+'</a>':x.cat_label;
+         return '<tr>'+
+           '<td><b>'+lbl+'</b><div style="font-size:10.5px;color:var(--gray500);margin-top:2px">'+x.desc_corta+'</div></td>'+
+           '<td style="font-size:12px">'+(x.periodo||'—')+'</td>'+
+           '<td style="text-align:right;white-space:nowrap"><b>'+fmtD(x._d)+'</b><div class="'+cls+'" style="font-size:10.5px;margin-top:2px">'+txt+'</div></td>'+
+           '</tr>';
+     }).join('');
+ }
+}function calLoadInline(){
   try{ const raw=document.getElementById('calData').textContent.trim();
     if(!raw||raw==='__CAL_JSON__') return null;
     return JSON.parse(raw);
