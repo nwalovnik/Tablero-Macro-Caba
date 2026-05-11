@@ -4,8 +4,7 @@ from datetime import datetime
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 XLSX = os.path.join(BASE, 'idecba')
-OUT = os.path.join(BASE, '..', 'macro_data.json')
-
+OUT = os.path.join(BASE, 'macro_data.json')
 def month_label(dt):
     meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
     return f"{meses[dt.month-1]}-{str(dt.year)[2:]}"
