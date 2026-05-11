@@ -31,22 +31,39 @@ def parse_ipcba():
     ws = wb['Evol_gral_estac_reg_resto']
     rows = list(ws.iter_rows(values_only=True))
     meses, niv, var_m = [], [], []
+    
     for row in rows[4:]:
         mes = row[0]
-        if not isinstance(mes, datetime): break
+        if mes is None: continue # Ignora filas vacías en lugar de frenar
+        
+        # Intentar convertir el mes a fecha si viene como texto o número
+        dt_mes = None
+        if isinstance(mes, datetime):
+            dt_mes = mes
+        elif isinstance(mes, str):
+            # Intenta detectar "Abr-26", "2026-04", etc.
+            import re
+            m = re.search(r'(\d{2,4})', mes)
+            if m: dt_mes = datetime.strptime(mes.strip()[:7], '%Y-%m') if '-' in mes else None
+        
+        if dt_mes is None: continue # Si no es fecha, sigue a la siguiente fila
+        
         niv_gen = row[1]
         if not isinstance(niv_gen,(int,float)): continue
-        meses.append(mes.strftime('%Y-%m'))
+        
+        meses.append(dt_mes.strftime('%Y-%m'))
         niv.append(round(float(niv_gen),2))
-        v = row[5]
+        v = row[5] # Variación mensual
         var_m.append(round(float(v),1) if isinstance(v,(int,float)) else None)
-    # calcular interanual: (niv[t]/niv[t-12] -1)*100 si hay 12 meses atrás
+    
+    # Cálculo de interanual
     var_ia = []
     for i,n in enumerate(niv):
         if i>=12 and niv[i-12]:
             var_ia.append(round((n/niv[i-12]-1)*100,1))
         else:
             var_ia.append(None)
+            
     return {
         'meses': meses,
         'meses_label': [month_label(datetime.strptime(m,'%Y-%m')) for m in meses],
