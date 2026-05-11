@@ -1,49 +1,52 @@
 import os
 import requests
+from datetime import datetime
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 XLSX_DIR = os.path.join(BASE, 'idecba')
 os.makedirs(XLSX_DIR, exist_ok=True)
 
 WP_REST = 'https://www.estadisticaciudad.gob.ar/eyc/wp-json/wp/v2/banco_datos'
-H = {'User-Agent': 'Mozilla/5.0'}
+H = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
 
-# Diccionario: Nombre que espera tu código -> Qué buscar en la web de la Ciudad
-ARCHIVOS_A_ACTUALIZAR = {
-    'ipcba_evol.xlsx': 'ipcba',
+# Diccionario de búsqueda refinada
+ARCHIVOS = {
+    'ipcba_evol.xlsx': 'ipcba mensual', # Buscamos "mensual" para asegurar el último
     'iae.xlsx': 'iae',
     'canastas.xlsx': 'canastas',
     'empleo.xlsx': 'etoi',
 }
 
-def actualizar_archivos():
-    for nombre_local, termino_busqueda in ARCHIVOS_A_ACTUALIZAR.items():
-        print(f"Buscando en API: '{termino_busqueda}' -> para actualizar {nombre_local}")
+def descargar_lo_mas_nuevo():
+    for nombre_local, termino in ARCHIVOS.items():
+        print(f"Buscando el más reciente para: {termino}...")
         try:
-            r = requests.get(WP_REST, params={'search': termino_busqueda}, headers=H, timeout=15)
+            # Pedimos los últimos 5 resultados ordenados por fecha de publicación
+            params = {'search': termino, 'orderby': 'date', 'order': 'desc', 'per_page': 5}
+            r = requests.get(WP_REST, params=params, headers=H, timeout=20)
+            
             if r.status_code == 200:
-                resultados = r.json()
-                for item in resultados:
+                items = r.json()
+                if not items:
+                    print(f" [!] No se encontró nada para {termino}")
+                    continue
+                
+                # Buscamos el primer link válido que termine en .xlsx
+                encontrado = False
+                for item in items:
                     link = item.get('link_archivo', '')
-                    if link.endswith('.xlsx') or link.endswith('.xls'):
-                        print(f" [+] Descargando: {link}")
-                        res = requests.get(link, headers=H, timeout=15)
-                        ruta_destino = os.path.join(XLSX_DIR, nombre_local)
-                        with open(ruta_destino, 'wb') as f:
+                    if link.lower().endswith('.xlsx'):
+                        print(f" [+] Encontrado dato nuevo: {link}")
+                        res = requests.get(link, headers=H, timeout=20)
+                        with open(os.path.join(XLSX_DIR, nombre_local), 'wb') as f:
                             f.write(res.content)
-                        print(f" [OK] Guardado y actualizado: {nombre_local}")
+                        print(f" [OK] {nombre_local} actualizado.")
+                        encontrado = True
                         break
+                if not encontrado:
+                    print(f" [!] No se halló link .xlsx en los resultados de {termino}")
         except Exception as e:
-            print(f" [X] Error con {nombre_local}: {e}")
+            print(f" [X] Error descargando {nombre_local}: {e}")
 
 if __name__ == '__main__':
-    # 1. Arreglamos el problema de Linux (Mayúsculas vs Minúsculas) en lo que ya está subido
-    for filename in os.listdir(XLSX_DIR):
-        ruta_vieja = os.path.join(XLSX_DIR, filename)
-        ruta_nueva = os.path.join(XLSX_DIR, filename.lower())
-        if ruta_vieja != ruta_nueva:
-            os.rename(ruta_vieja, ruta_nueva)
-            print(f"Renombrado para compatibilidad Linux: {filename} a {filename.lower()}")
-            
-    # 2. Descargamos las actualizaciones de la Ciudad
-    actualizar_archivos()
+    descargar_lo_mas_nuevo()
