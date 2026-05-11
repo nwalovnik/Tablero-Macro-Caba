@@ -1,3 +1,19 @@
+# Agregar esto para que descargue el IPCBA automáticamente
+def descargar_ipcba():
+    url_api = "https://www.estadisticaciudad.gob.ar/eyc/wp-json/wp/v2/banco_datos?search=ipcba_mensual"
+    try:
+        r = requests.get(url_api).json()
+        url_xlsx = r[0]['link_archivo'] # Busca el link real del último archivo subido
+        print(f"Descargando IPCBA desde: {url_xlsx}")
+        res = requests.get(url_xlsx)
+        with open(os.path.join(XLSX, 'ipcba_mensual.xlsx'), 'wb') as f:
+            f.write(res.content)
+    except Exception as e:
+        print(f"Error descargando IPCBA: {e}")
+
+# Llamar a la función antes de parsear
+if not os.path.exists(XLSX): os.makedirs(XLSX)
+descargar_ipcba()
 """Parsea los XLSX de IDECBA descargados y genera macro_data.json consolidado."""
 import json, os, openpyxl, xlrd
 from datetime import datetime
