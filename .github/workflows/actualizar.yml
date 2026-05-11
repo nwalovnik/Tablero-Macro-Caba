@@ -1,0 +1,37 @@
+name: Actualizacion Automatica de Datos
+on:
+  schedule:
+    - cron: '0 13 * * *' # Todos los días a las 10:00 AM de Argentina
+  workflow_dispatch:      # Permite que le des a un botón para actualizar ya mismo
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar codigo
+        uses: actions/checkout@v3
+
+      - name: Instalar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Instalar librerias necesarias
+        run: pip install requests openpyxl beautifulsoup4 lxml xlrd
+
+      - name: Crear carpeta idecba si no existe
+        run: mkdir -p idecba
+
+      - name: Correr scripts de actualizacion
+        run: |
+          python build_macro_data.py
+          python build_pgb_rubros.py
+          python generar_macro.py
+
+      - name: Guardar cambios y subir
+        run: |
+          git config --global user.name 'Robot Actualizador'
+          git config --global user.email 'bot@github.com'
+          git add .
+          git commit -m "Datos actualizados automáticamente" || exit 0
+          git push
