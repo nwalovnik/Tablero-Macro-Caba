@@ -1099,7 +1099,7 @@ function calRender() {
     }).join('');
   }
 }
-}function calLoadInline(){
+function calLoadInline(){
   try{ const raw=document.getElementById('calData').textContent.trim();
     if(!raw||raw==='__CAL_JSON__') return null;
     return JSON.parse(raw);
