@@ -11,10 +11,10 @@ import openpyxl
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 PROJ = os.path.dirname(BASE)
-MACRO_JSON = os.path.join(PROJ, 'macro_data.json')
-HTML_FILES = [os.path.join(PROJ, 'tablero-macro.html'),
-              os.path.join(PROJ, 'Macro_CABA', 'tablero-macro.html'),
-              os.path.join(PROJ, 'Macro_CABA', 'index.html')]
+MACRO_JSON = os.path.join(BASE, 'macro_data.json')
+HTML_FILES = [os.path.join(BASE, 'tablero-macro.html')]
+              os.path.join(BASE, 'Macro_CABA', 'tablero-macro.html'),
+              os.path.join(BASE, 'Macro_CABA', 'index.html')]
 
 H = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
      'Accept': 'application/json,text/html,*/*'}
