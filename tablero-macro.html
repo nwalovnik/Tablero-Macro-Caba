@@ -1072,39 +1072,33 @@ function calParseHTML(html){
   events.sort((a,b)=> a.fecha===b.fecha ? a.titulo.localeCompare(b.titulo) : a.fecha.localeCompare(b.fecha));
   return events;
 }
-function calRender(cal){
-  const today=new Date(); today.setHours(0,0,0,0);
-  const parseD=s=>{const[y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d);};
-  const fmtD=d=>{const dd=String(d.getDate()).padStart(2,'0'),mm=mesNom[d.getMonth()].slice(0,3),yy=String(d.getFullYear()).slice(2);return dd+'-'+mm+'-'+yy;};
-  const all=(cal.macro||[]).map(x=>{const d=parseD(x.fecha); return Object.assign({},x,{_d:d,_dias:Math.round((d-today)/86400000)});}).sort((a,b)=>a._d-b._d);
-  const future=all.filter(x=>x._dias>=0);
-  const next=future[0]||all[all.length-1];
-  if(next){
-    document.getElementById('calBanner').style.display='flex';
-    document.getElementById('calBannerLabel').textContent = next.cat_label+(next.periodo?' · '+next.periodo:'');
-    document.getElementById('calBannerSub').textContent = next.desc_corta+' · '+fmtD(next._d);
-    const n=next._dias;
-    document.getElementById('calBannerDias').textContent = n>=0 ? n : '+'+(-n);
-    document.getElementById('calBannerUnit').textContent = n<0 ? 'días atrasado' : n===0?'hoy':n===1?'día':'días';
-  }
-  const rows=future.slice(0,15);
-  const gen = cal.generado ? cal.generado.slice(0,10) : '';
+function calRender() {
+  const cal = MACRO.calendario || {};
+  const future = (cal.proximos || []).filter(x => x._dias >= 0);
+  const rows = future.slice(0, 10);
+  
+  // Blindaje: Si los elementos no existen en el HTML, la función termina en paz
   const elTag = document.getElementById('calTag');
-  if (elTag) {
-     elTag.textContent = future.length+' próximas'+(gen?' · act. '+gen:'');
-  }
   const elBody = document.getElementById('calBody');
+  
+  if (elTag) {
+    const gen = cal.generado ? cal.generado.slice(0,10) : '';
+    elTag.textContent = future.length + ' próximas' + (gen ? ' · act. ' + gen : '');
+  }
+  
   if (elBody) {
-     elBody.innerHTML = rows.map(x=>{
-         const cls=x._dias<=14?'cal-row-soon':'cal-row-far';
-         const txt=x._dias===0?'hoy':'en '+x._dias+' d';
-         const lbl=x.url?'<a href="'+x.url+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;border-bottom:1px dotted currentColor">'+x.cat_label+'</a>':x.cat_label;
-         return '<tr>'+
-           '<td><b>'+lbl+'</b><div style="font-size:10.5px;color:var(--gray500);margin-top:2px">'+x.desc_corta+'</div></td>'+
-           '<td style="font-size:12px">'+(x.periodo||'—')+'</td>'+
-           '<td style="text-align:right;white-space:nowrap"><b>'+fmtD(x._d)+'</b><div class="'+cls+'" style="font-size:10.5px;margin-top:2px">'+txt+'</div></td>'+
-           '</tr>';
-     }).join('');
+    elBody.innerHTML = rows.map(x => {
+      const cls = x._dias <= 14 ? 'cal-row-soon' : 'cal-row-far';
+      const txt = x._dias === 0 ? 'hoy' : 'en ' + x._dias + ' d';
+      const lbl = x.url ? `<a href="${x.url}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;border-bottom:1px dotted currentColor">${x.cat_label}</a>` : x.cat_label;
+      return `<tr>
+        <td><b>${lbl}</b><div style="font-size:10.5px;color:var(--gray500);margin-top:2px">${x.desc_corta}</div></td>
+        <td style="font-size:12px">${x.periodo || '—'}</td>
+        <td style="text-align:right;white-space:nowrap"><b>${fmtD(x._d)}</b><div class="${cls}" style="font-size:10.5px;margin-top:2px">${txt}</div></td>
+      </tr>`;
+    }).join('');
+  }
+}
  }
 }function calLoadInline(){
   try{ const raw=document.getElementById('calData').textContent.trim();
