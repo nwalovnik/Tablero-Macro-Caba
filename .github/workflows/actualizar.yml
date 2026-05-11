@@ -21,16 +21,12 @@ jobs:
       - name: Instalar librerias
         run: pip install requests openpyxl beautifulsoup4 lxml xlrd
 
-      - name: Descargar Excels de IDECBA
-        run: |
-          mkdir -p idecba
-          # Descarga el archivo de IPCBA directamente al lugar donde el script lo busca
-          curl -L "https://www.estadisticaciudad.gob.ar/eyc/wp-content/uploads/2024/05/ipcba_mensual.xlsx" -o idecba/ipcba_mensual.xlsx
-          # Agrega aquí otras descargas si los scripts piden más archivos (iae, canastas, etc)
+      - name: Crear carpeta idecba
+        run: mkdir -p idecba
 
       - name: Correr scripts
         run: |
-          # Usamos "|| true" para que si un script falla, intente seguir con el siguiente
+          # Primero ejecutamos los scripts que descargan y procesan
           python build_macro_data.py || true
           python build_pgb_rubros.py || true
           python generar_macro.py
