@@ -88,6 +88,18 @@ ARCHIVOS = [
         # build_macro_data.parse_shoppings() lee hoja 'AC_CC_AX07'
         'slug_re':   r'variacion-interanual-del-indice-a-valores-constantes-base-2021100-de-ventas-por-rubro-en-centros-de-compras',
     },
+    {
+        'filename':  'supermercados.xlsx',
+        'categoria': 'supermercados',
+        # build_macro_data.parse_supermercados() lee hoja 'AC_S_01'
+        'slug_re':   r'ventas-a-valores-constantes-en-supermercados-variacion-interanual',
+    },
+    {
+        'filename':  'masa_salarial.xlsx',
+        'categoria': 'industria',
+        # build_macro_data.parse_masa_salarial() lee hoja 'ee_industria_masa_salarial'
+        'slug_re':   r'masa-salarial-por-rama-de-actividad-indice-base-octubre-2001',
+    },
 ]
 
 # Posts cuyo slug ya conocemos NO matchean nuestra regex (falsos positivos a evitar)

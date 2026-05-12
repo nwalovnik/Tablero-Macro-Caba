@@ -473,6 +473,88 @@ def parse_shoppings():
             'fuente': 'IDECBA · AC_CC_AX07.xlsx'}
 
 
+# ── Supermercados (retail, var i.a. de ventas constantes) ──
+def parse_supermercados():
+    """AC_S_01.xlsx — variación interanual % de ventas a valores constantes.
+    Col 0: alterna 'YYYY' y nombres de mes.
+    Col 1: IPI Encuesta (serie larga, 2001+).
+    Col 2: IP elaborado IDECBA con IPCBA (más reciente, 2013+).
+    Tomamos col 1 (cobertura completa) y si es '.' o None, fallback a col 2.
+    """
+    wb = openpyxl.load_workbook(os.path.join(XLSX, 'supermercados.xlsx'), data_only=True)
+    ws = wb['AC_S_01']
+    rows = list(ws.iter_rows(values_only=True))
+    periodos, var_ia = [], []
+    cur_year = None
+    for row in rows[4:]:
+        if row[0] is None:
+            continue
+        cell = str(row[0]).strip()
+        try:
+            y = int(float(cell.replace('*','').strip()))
+            if 2000 <= y <= 2100:
+                cur_year = y
+                continue
+        except Exception:
+            pass
+        m = MESES_ES.get(_norm(cell).replace('*','').strip())
+        if m is None or cur_year is None:
+            break
+        # Preferir col 1 (IPI Encuesta), fallback col 2
+        v = None
+        for col in (1, 2):
+            if col < len(row) and row[col] is not None and row[col] != '.':
+                try:
+                    v = round(float(row[col]), 2)
+                    break
+                except Exception:
+                    pass
+        periodos.append(f'{cur_year}-{m:02d}')
+        var_ia.append(v)
+    return {'periodos': periodos, 'var_ia': var_ia,
+            'fuente': 'IDECBA · AC_S_01.xlsx'}
+
+
+# ── Masa salarial industrial (Total nominal índice base oct-2001=100) ──
+def parse_masa_salarial():
+    """ee_industria_masa_salarial.xlsx — índice nominal base oct-2001=100.
+    Col 0: año (sólo en filas de cambio), col 1: mes, col 2: Total.
+    El HTML deflacta por IPCBA para mostrar valor real base 2016=100.
+    """
+    wb = openpyxl.load_workbook(os.path.join(XLSX, 'masa_salarial.xlsx'), data_only=True)
+    ws = wb['ee_industria_masa_salarial']
+    rows = list(ws.iter_rows(values_only=True))
+    periodos, total = [], []
+    cur_year = None
+    for row in rows[3:]:
+        # Año puede estar en col 0
+        if row[0] is not None:
+            cell = str(row[0]).strip()
+            try:
+                y = int(float(cell.replace('*','').strip()))
+                if 2000 <= y <= 2100:
+                    cur_year = y
+            except Exception:
+                # Llegamos a notas al pie
+                if row[1] is None:
+                    break
+        # Mes en col 1
+        if row[1] is None or cur_year is None:
+            continue
+        m = MESES_ES.get(_norm(str(row[1])).replace('*','').strip())
+        if m is None:
+            continue
+        v = row[2]
+        try:
+            val = round(float(v), 3) if v is not None else None
+        except Exception:
+            val = None
+        periodos.append(f'{cur_year}-{m:02d}')
+        total.append(val)
+    return {'periodos': periodos, 'total': total,
+            'fuente': 'IDECBA · ee_industria_masa_salarial.xlsx · índice nominal base oct-2001=100'}
+
+
 # ── Comercio exterior (exportaciones) ──────────────────
 def parse_comex():
     """Parsea exportaciones CABA.
@@ -582,7 +664,9 @@ def main():
         'pobreza_tasas': parse_pobreza_tasas(),
         'comex': parse_comex(),
         'autoservicios': parse_autoservicios(),
+        'supermercados': parse_supermercados(),
         'shoppings': parse_shoppings(),
+        'masa_salarial': parse_masa_salarial(),
         'fuente': 'IDECBA — Instituto de Estadística y Censos GCBA',
         'generado': datetime.now().strftime('%Y-%m-%d'),
     }
@@ -616,5 +700,10 @@ def main():
     print(f'  autoservicios: {len(aut["periodos"])} meses ({aut["periodos"][0]}..{aut["periodos"][-1]}) últ. var.i.a.={aut["var_ia"][-1]}')
     shp = out['shoppings']
     print(f'  shoppings: {len(shp["periodos"])} meses ({shp["periodos"][0]}..{shp["periodos"][-1]}) {len(shp["rubros"])} rubros')
+    sm = out['supermercados']
+    nn = next((sm["var_ia"][i] for i in range(len(sm["var_ia"])-1,-1,-1) if sm["var_ia"][i] is not None), None)
+    print(f'  supermercados: {len(sm["periodos"])} meses ({sm["periodos"][0]}..{sm["periodos"][-1]}) últ. var.i.a.={nn}')
+    ms = out['masa_salarial']
+    print(f'  masa_salarial: {len(ms["periodos"])} meses ({ms["periodos"][0]}..{ms["periodos"][-1]}) últ. índice={ms["total"][-1]}')
 
 if __name__=='__main__': main()
