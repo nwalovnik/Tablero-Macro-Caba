@@ -469,6 +469,7 @@ def parse_shoppings():
             except Exception:
                 rubros[name].append(None)
     return {'periodos': periodos, 'rubros': rubros,
+            'rubros_orden': [name for _, name in rubros_idx],
             'fuente': 'IDECBA · AC_CC_AX07.xlsx'}
 
 
