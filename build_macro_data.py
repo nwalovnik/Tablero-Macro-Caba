@@ -479,11 +479,13 @@ def main():
     }
     # Derivar MACRO.pobreza desde canastas (Hogar 1a: pareja adulta).
     # lp_hogares[i][1] y li_hogares[i][1] = canasta total y CA respectivamente.
+    # El HTML usa arr[1] para "hogar tipo 2 (pareja con hijos)" — coincide con Hogar 1a de IDECBA.
     c = out['canastas']
     out['pobreza'] = {
         'periodos': c['meses'],
         'lp_hogares': [[None, v, None, None, None] for v in c['total']],
         'li_hogares': [[None, v, None, None, None] for v in c['ca']],
+        'hogares_labels': ['Hogar 1', 'Pareja c/ 2 hijos', 'Hogar 3', 'Hogar 4', 'Hogar 5'],
     }
     with open(OUT, 'w', encoding='utf-8') as f:
         json.dump(out, f, ensure_ascii=False, separators=(',',':'))
