@@ -24,8 +24,8 @@ H = {
     'Accept': 'text/html,application/json,*/*;q=0.8',
     'Accept-Language': 'es-AR,es;q=0.9,en;q=0.8',
 }
-TIMEOUT_API = 20
-TIMEOUT_DL  = 60
+TIMEOUT_API = 15
+TIMEOUT_DL  = 15
 
 # Cada entrada:
 #   filename: nombre local (lo que espera build_macro_data.py)
@@ -133,14 +133,21 @@ def find_xlsx_url(search, pattern):
     return None
 
 
-def download_with_retry(url, dest, retries=1):
-    # Forzar HTTPS: el servidor IDECBA timea conexiones por HTTP port 80
+def download_with_retry(url, dest, retries=0):
+    # Forzar HTTPS: el servidor IDECBA suele redirigir XLSX a HTTP (port 80) que timea
     if url.startswith('http://'):
         url = 'https://' + url[len('http://'):]
     last = None
     for attempt in range(retries + 1):
         try:
-            r = requests.get(url, headers=H, timeout=TIMEOUT_DL, stream=True)
+            # allow_redirects=False evita seguir redirects a HTTP que cuelgan
+            r = requests.get(url, headers=H, timeout=TIMEOUT_DL, stream=True, allow_redirects=False)
+            if r.status_code in (301, 302, 303, 307, 308):
+                loc = r.headers.get('Location', '')
+                if loc.startswith('http://'):
+                    loc = 'https://' + loc[len('http://'):]
+                if loc:
+                    r = requests.get(loc, headers=H, timeout=TIMEOUT_DL, stream=True, allow_redirects=False)
             r.raise_for_status()
             with open(dest, 'wb') as f:
                 for chunk in r.iter_content(chunk_size=65536):
@@ -150,8 +157,8 @@ def download_with_retry(url, dest, retries=1):
         except Exception as e:
             last = e
             if attempt < retries:
-                time.sleep(3 * (attempt + 1))
-    print(f'   descarga fallo despues de {retries+1} intentos: {last}', flush=True)
+                time.sleep(2)
+    print(f'   descarga fallo: {str(last)[:80]}', flush=True)
     return False
 
 
