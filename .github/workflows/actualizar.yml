@@ -24,17 +24,23 @@ jobs:
       - name: Crear carpeta idecba
         run: mkdir -p idecba
 
-      - name: Correr scripts
-        run: |
-          python descargar_datos.py
-          python build_macro_data.py 
-          python build_pgb_rubros.py 
-          python generar_macro.py
+      - name: Bajar XLSX de IDECBA
+        run: python descargar_datos.py
 
-      - name: Guardar cambios
+      - name: Generar macro_data.json
+        run: python build_macro_data.py
+
+      - name: Generar calendario.json + inyectar calData en HTML
+        run: python build_calendario.py
+
+      - name: PGB sectorial + IPCBA rubros + parche MACRO inline en HTML
+        run: python build_pgb_rubros.py
+
+      - name: Commit y push
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add .
-          git commit -m "Auto-update: $(date +'%Y-%m-%d')" || exit 0
+          git add -A
+          git diff --cached --quiet && echo "Sin cambios" && exit 0
+          git commit -m "Auto-update: $(date +'%Y-%m-%d %H:%M')"
           git push
