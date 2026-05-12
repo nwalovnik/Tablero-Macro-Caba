@@ -24,8 +24,8 @@ H = {
     'Accept': 'text/html,application/json,*/*;q=0.8',
     'Accept-Language': 'es-AR,es;q=0.9,en;q=0.8',
 }
-TIMEOUT_API = 60
-TIMEOUT_DL  = 120
+TIMEOUT_API = 20
+TIMEOUT_DL  = 60
 
 # Cada entrada:
 #   filename: nombre local (lo que espera build_macro_data.py)
@@ -84,7 +84,7 @@ ARCHIVOS = [
 ]
 
 
-def _get_with_retry(url, retries=2, label='get'):
+def _get_with_retry(url, retries=1, label='get'):
     """GET con reintentos. Devuelve None si todos los intentos fallan."""
     last = None
     for attempt in range(retries + 1):
@@ -95,8 +95,8 @@ def _get_with_retry(url, retries=2, label='get'):
         except Exception as e:
             last = e
             if attempt < retries:
-                time.sleep(3 * (attempt + 1))
-    print(f'   {label} fallo despues de {retries+1} intentos: {last}', flush=True)
+                time.sleep(2)
+    print(f'   {label} fallo: {str(last)[:80]}', flush=True)
     return None
 
 
@@ -106,8 +106,8 @@ def find_xlsx_url(search, pattern):
     para datasets con multiples aperturas como IPCBA).
     """
     r = _get_with_retry(
-        f'{WP_REST}?search={requests.utils.quote(search)}&orderby=date&order=desc&per_page=5',
-        retries=2, label='wp-json',
+        f'{WP_REST}?search={requests.utils.quote(search)}&orderby=date&order=desc&per_page=3',
+        retries=1, label='wp-json',
     )
     if r is None:
         return None
@@ -124,7 +124,7 @@ def find_xlsx_url(search, pattern):
         link = post.get('link')
         if not link:
             continue
-        pr = _get_with_retry(link, retries=2, label=f'post page')
+        pr = _get_with_retry(link, retries=1, label='post page')
         if pr is None:
             continue
         m = pat.search(pr.text)
@@ -133,7 +133,7 @@ def find_xlsx_url(search, pattern):
     return None
 
 
-def download_with_retry(url, dest, retries=2):
+def download_with_retry(url, dest, retries=1):
     # Forzar HTTPS: el servidor IDECBA timea conexiones por HTTP port 80
     if url.startswith('http://'):
         url = 'https://' + url[len('http://'):]
