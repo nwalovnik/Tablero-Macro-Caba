@@ -37,7 +37,7 @@ ARCHIVOS = [
         'filename': 'ipcba_evol.xlsx',
         'search':   'IPCBA indice mensual nivel general empalme',
         'pattern':  r'href="(https://www\.estadisticaciudad\.gob\.ar/eyc/wp-content/uploads/[^"]+IPCBA[^"]+(?:nivel[_\-]general|empalme|evol|serie[_\-]mensual)[^"]*\.xlsx)"',
-        'fallback': 'https://www.estadisticaciudad.gob.ar/eyc/wp-content/uploads/2024/12/IPCBA_base_2021100-Indices_nivel_general.xlsx',
+        'fallback': 'https://www.estadisticaciudad.gob.ar/eyc/wp-content/uploads/2026/03/IPCBA_base_2021100-Nivel_general_empalme.xlsx',
     },
     {
         'filename': 'iae.xlsx',
@@ -84,28 +84,32 @@ ARCHIVOS = [
 ]
 
 
-GENERIC_XLSX = re.compile(
-    r'href="(https://www\.estadisticaciudad\.gob\.ar/eyc/wp-content/uploads/[^"]+\.xlsx)"',
-    re.I,
-)
+def _get_with_retry(url, retries=2, label='get'):
+    """GET con reintentos. Devuelve None si todos los intentos fallan."""
+    last = None
+    for attempt in range(retries + 1):
+        try:
+            r = requests.get(url, headers=H, timeout=TIMEOUT_API)
+            r.raise_for_status()
+            return r
+        except Exception as e:
+            last = e
+            if attempt < retries:
+                time.sleep(3 * (attempt + 1))
+    print(f'   {label} fallo despues de {retries+1} intentos: {last}', flush=True)
+    return None
 
 
 def find_xlsx_url(search, pattern):
-    """Busca el XLSX mas reciente:
-       1) Primer post con un .xlsx que matchea el patron especifico.
-       2) Si nada matchea, devuelve el primer .xlsx del primer post (cualquier .xlsx).
+    """Devuelve el .xlsx mas reciente cuya URL matchee el patron especifico.
+    Si ningun post matchea, devuelve None (no usar fallback generico: peligroso
+    para datasets con multiples aperturas como IPCBA).
     """
-    try:
-        r = requests.get(
-            WP_REST,
-            params={'search': search, 'orderby': 'date', 'order': 'desc', 'per_page': 5},
-            headers=H, timeout=TIMEOUT_API,
-        )
-    except Exception as e:
-        print(f'   wp-json fallo: {e}', flush=True)
-        return None
-    if r.status_code != 200:
-        print(f'   wp-json HTTP {r.status_code}', flush=True)
+    r = _get_with_retry(
+        f'{WP_REST}?search={requests.utils.quote(search)}&orderby=date&order=desc&per_page=5',
+        retries=2, label='wp-json',
+    )
+    if r is None:
         return None
     try:
         posts = r.json()
@@ -116,27 +120,17 @@ def find_xlsx_url(search, pattern):
         return None
 
     pat = re.compile(pattern, re.I)
-    primer_generico = None
     for post in posts:
         link = post.get('link')
         if not link:
             continue
-        try:
-            html = requests.get(link, headers=H, timeout=TIMEOUT_API).text
-        except Exception as e:
-            print(f'   no se pudo abrir {link}: {e}', flush=True)
+        pr = _get_with_retry(link, retries=2, label=f'post page')
+        if pr is None:
             continue
-        m = pat.search(html)
+        m = pat.search(pr.text)
         if m:
             return m.group(1)
-        # No matcheo el patron especifico: guardar el primer .xlsx generico del primer post
-        if primer_generico is None:
-            mg = GENERIC_XLSX.search(html)
-            if mg:
-                primer_generico = mg.group(1)
-    if primer_generico:
-        print(f'   patron especifico no matcheo, uso .xlsx generico: {primer_generico}', flush=True)
-    return primer_generico
+    return None
 
 
 def download_with_retry(url, dest, retries=2):
