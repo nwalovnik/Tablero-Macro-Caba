@@ -64,6 +64,18 @@ ARCHIVOS = [
         # build_macro_data.parse_locales() lee multiples hojas '3er. cuatr. de YYYY'
         'slug_re':   r'locales-relevados-ocupados-y-desocupados.*53-ejes-comerciales',
     },
+    {
+        'filename':  'comex_tot.xlsx',
+        'categoria': 'comercio-exterior',
+        # build_macro_data.parse_comex() lee hoja 'AX_CX_TOT'
+        'slug_re':   r'exportaciones-monto-fob-en-dolares-y-participacion',
+    },
+    {
+        'filename':  'comex_zon.xlsx',
+        'categoria': 'comercio-exterior',
+        # build_macro_data.parse_comex() lee hoja 'AX_CX_ZON'
+        'slug_re':   r'exportaciones-clasificadas-por-continente-y-zona-economica-millones',
+    },
 ]
 
 # Posts cuyo slug ya conocemos NO matchean nuestra regex (falsos positivos a evitar)

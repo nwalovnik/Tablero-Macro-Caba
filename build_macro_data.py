@@ -373,6 +373,80 @@ def parse_pobreza_tasas():
         'ind_per_abs': ind_per_abs,
     }
 
+# ── Comercio exterior (exportaciones) ──────────────────
+def parse_comex():
+    """Parsea exportaciones CABA.
+    comex_tot.xlsx: series anuales USD + %PGB (1993-2025).
+    comex_zon.xlsx: por continente/zona económica en millones USD (2000-2025).
+    """
+    # ── TOT ────────────────────────────────────────────
+    wb_t = openpyxl.load_workbook(os.path.join(XLSX, 'comex_tot.xlsx'), data_only=True)
+    ws_t = wb_t['AX_CX_TOT']
+    rows_t = list(ws_t.iter_rows(values_only=True))
+    anios, exportaciones_usd, pct_pgb = [], [], []
+    for row in rows_t[3:]:   # fila 0 título, 1 vacía, 2 header, 3 vacía, 4+ datos
+        if row[0] is None:
+            continue   # saltar filas vacías intermedias
+        raw_anio = str(row[0]).replace('*', '').strip()
+        try:
+            anio = int(float(raw_anio))
+        except Exception:
+            break   # nota al pie u otro texto → fin de datos
+        try:
+            usd = float(row[1]) if row[1] is not None else None
+            pct = float(row[2]) if row[2] is not None else None
+        except Exception:
+            break
+        anios.append(anio)
+        exportaciones_usd.append(round(usd) if usd is not None else None)
+        pct_pgb.append(round(pct, 4) if pct is not None else None)
+
+    # ── ZON ────────────────────────────────────────────
+    wb_z = openpyxl.load_workbook(os.path.join(XLSX, 'comex_zon.xlsx'), data_only=True)
+    ws_z = wb_z['AX_CX_ZON']
+    rows_z = list(ws_z.iter_rows(values_only=True))
+    header_z = rows_z[1]    # fila 1: nombre | año1 | año2 | ...
+    anios_zona = []
+    for v in header_z[1:]:
+        if v is None:
+            break
+        raw = str(v).replace('*', '').strip()
+        try:
+            anios_zona.append(int(float(raw)))
+        except Exception:
+            break
+    n_years = len(anios_zona)
+
+    # Zonas continentales principales (excluye sub-zonas y notas al pie)
+    ZONAS_OK = {'Total', 'América', 'Europa', 'Asia', 'África', 'Oceanía', 'Indeterminado'}
+    STOP_PREFIXES = ('.', 'Nota', 'Fuente', 'Desde', 'La info', 'Indeterm comprende')
+    por_zona = {}
+    for row in rows_z[2:]:
+        if not row[0]:
+            break
+        name = str(row[0]).strip()
+        if any(name.startswith(p) for p in STOP_PREFIXES):
+            break
+        if name not in ZONAS_OK:
+            continue
+        vals = []
+        for i in range(1, n_years + 1):
+            v = row[i] if i < len(row) else None
+            try:
+                vals.append(round(float(v), 3) if v is not None else None)
+            except Exception:
+                vals.append(None)
+        por_zona[name] = vals
+
+    return {
+        'anios': anios,
+        'exportaciones_usd': exportaciones_usd,
+        'pct_pgb': pct_pgb,
+        'anios_zona': anios_zona,
+        'por_zona': por_zona,
+    }
+
+
 # ── Población por comuna ────────────────────────────────
 def parse_poblacion():
     wb = xlrd.open_workbook(os.path.join(XLSX,'pob_comuna.xls'))
@@ -399,8 +473,17 @@ def main():
         'industria_personal': parse_industria('personal'),
         'poblacion': parse_poblacion(),
         'pobreza_tasas': parse_pobreza_tasas(),
+        'comex': parse_comex(),
         'fuente': 'IDECBA — Instituto de Estadística y Censos GCBA',
         'generado': datetime.now().strftime('%Y-%m-%d'),
+    }
+    # Derivar MACRO.pobreza desde canastas (Hogar 1a: pareja adulta).
+    # lp_hogares[i][1] y li_hogares[i][1] = canasta total y CA respectivamente.
+    c = out['canastas']
+    out['pobreza'] = {
+        'periodos': c['meses'],
+        'lp_hogares': [[None, v, None, None, None] for v in c['total']],
+        'li_hogares': [[None, v, None, None, None] for v in c['ca']],
     }
     with open(OUT, 'w', encoding='utf-8') as f:
         json.dump(out, f, ensure_ascii=False, separators=(',',':'))
@@ -415,5 +498,8 @@ def main():
     print(f'  poblacion: {len(out["poblacion"]["comunas"])} comunas, años {out["poblacion"]["años"][0]}-{out["poblacion"]["años"][-1]}')
     pob = out['pobreza_tasas']
     print(f'  pobreza_tasas: {len(pob["periodos"])} periodos, ultimo: {pob["periodos"][-1]} pob_hog={pob["pob_hog_pct"][-1]}% ind_hog={pob["ind_hog_pct"][-1]}%')
+    cx = out['comex']
+    print(f'  comex: {len(cx["anios"])} años ({cx["anios"][0]}-{cx["anios"][-1]}) USD={cx["exportaciones_usd"][-1]:,} zonas={list(cx["por_zona"].keys())}')
+    print(f'  pobreza (derivada): {len(out["pobreza"]["periodos"])} meses, último LP={out["pobreza"]["lp_hogares"][-1][1]}')
 
 if __name__=='__main__': main()
