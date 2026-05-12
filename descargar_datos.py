@@ -1,11 +1,21 @@
-"""Baja los XLSX/XLS mas recientes del banco de datos IDECBA.
+"""Baja los XLSX mas recientes del banco de datos IDECBA.
 
-Para cada archivo:
-  1. Busca el post mas reciente en wp-json/v2/banco_datos con el termino dado.
-  2. Abre la pagina del post y extrae el primer href que matchee el patron.
-  3. Si todo eso falla, usa el URL fallback hardcodeado.
+Estrategia:
+  1. Para cada archivo necesario, hay una pagina de categoria de IDECBA hardcodeada
+     (las categorias son estables, los posts dentro rotan).
+  2. Bajamos la pagina de categoria y extraemos los hrefs de /eyc/banco-datos/<slug>/.
+  3. Tomamos el primer slug que matchea una regex especifica del archivo.
+     (la categoria lista los posts ordenados por fecha desc, asi que el primer
+     match es el mas reciente).
+  4. Bajamos esa pagina de dataset y extraemos el primer .xlsx.
+  5. Bajamos el .xlsx forzando HTTPS y guardamos en idecba/<nombre>.
 
-Los archivos se guardan en idecba/ con el nombre que espera build_macro_data.py.
+Si cualquier paso falla, mantenemos la version previa committeada del XLSX en
+idecba/ — build_macro_data.py va a procesar lo que haya.
+
+Archivos que no estan acá (empleo, industria, pobreza_tasas) se mantienen con la
+version committeada porque los parsers de build_macro_data.py esperan layouts
+muy especificos y no es trivial encontrar un equivalente actualizado en banco_datos.
 """
 import os
 import re
@@ -17,180 +27,164 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 XLSX_DIR = os.path.join(BASE, 'idecba')
 os.makedirs(XLSX_DIR, exist_ok=True)
 
-WP_REST = 'https://www.estadisticaciudad.gob.ar/eyc/wp-json/wp/v2/banco_datos'
 H = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
                   '(KHTML, like Gecko) Chrome/120.0 Safari/537.36',
     'Accept': 'text/html,application/json,*/*;q=0.8',
     'Accept-Language': 'es-AR,es;q=0.9,en;q=0.8',
 }
-TIMEOUT_API = 15
-TIMEOUT_DL  = 15
+TIMEOUT = 15
+
+CAT_BASE = 'https://www.estadisticaciudad.gob.ar/eyc/categoria-banco-datos/'
 
 # Cada entrada:
 #   filename: nombre local (lo que espera build_macro_data.py)
-#   search:   query para wp-json (terminos especificos)
-#   pattern:  regex que matchea el .xlsx en el HTML del post
-#   fallback: URL hardcoded del XLSX (se usa solo si descubrir dinamicamente falla)
+#   categoria: URL slug de la pagina de categoria
+#   slug_re: regex (case-insensitive) que matchea el slug del post correcto
+#            dentro de esa categoria. El primer match (=mas reciente) gana.
 ARCHIVOS = [
     {
-        'filename': 'ipcba_evol.xlsx',
-        'search':   'IPCBA indice mensual nivel general empalme',
-        'pattern':  r'href="(https://www\.estadisticaciudad\.gob\.ar/eyc/wp-content/uploads/[^"]+IPCBA[^"]+(?:nivel[_\-]general|empalme|evol|serie[_\-]mensual)[^"]*\.xlsx)"',
-        'fallback': 'https://www.estadisticaciudad.gob.ar/eyc/wp-content/uploads/2026/03/IPCBA_base_2021100-Nivel_general_empalme.xlsx',
+        'filename':  'ipcba_evol.xlsx',
+        'categoria': 'indice-mensual-base-2021',
+        # build_macro_data.parse_ipcba() lee la hoja 'Evol_gral_estac_reg_resto'
+        'slug_re':   r'evolucion-del-nivel-general-estacionales-regulados-y-resto',
+    },
+    # NOTA: canastas.xlsx no se baja — IDECBA cambio el layout (CV_01_AX20 en vez de Canasta_cons_hogar1).
+    # parse_canastas() en build_macro_data.py espera el formato viejo. Hasta adaptar
+    # el parser, mantenemos el XLSX previo committeado en idecba/.
+    {
+        'filename':  'iae.xlsx',
+        'categoria': 'producto-geografico-bruto-pgb',
+        # build_macro_data.parse_iae() lee la hoja 'PGB_ITAE_b12'
+        'slug_re':   r'indicador-trimestral-de-actividad-economica',
     },
     {
-        'filename': 'iae.xlsx',
-        'search':   'producto geografico bruto trimestral PGB Ciudad Buenos Aires',
-        'pattern':  r'href="(https://www\.estadisticaciudad\.gob\.ar/eyc/wp-content/uploads/[^"]+PGB[^"]+\.xlsx)"',
-        'fallback': 'https://www.estadisticaciudad.gob.ar/eyc/wp-content/uploads/2025/12/PGB_K_variacion_porcentual.xlsx',
-    },
-    {
-        'filename': 'canastas.xlsx',
-        'search':   'canastas consumo hogar lineas pobreza indigencia',
-        'pattern':  r'href="(https://www\.estadisticaciudad\.gob\.ar/eyc/wp-content/uploads/[^"]+[Cc]anasta[^"]*\.xlsx)"',
-        'fallback': 'https://www.estadisticaciudad.gob.ar/eyc/wp-content/uploads/2024/12/Canastas_y_Lineas_de_Pobreza.xlsx',
-    },
-    {
-        'filename': 'empleo.xlsx',
-        'search':   'mercado laboral ETOI tasas actividad empleo desocupacion trimestral',
-        'pattern':  r'href="(https://www\.estadisticaciudad\.gob\.ar/eyc/wp-content/uploads/[^"]+(?:ETOI|etoi|laboral|empleo)[^"]*\.xlsx)"',
-        'fallback': 'https://www.estadisticaciudad.gob.ar/eyc/wp-content/uploads/2024/12/ETOI_series_historicas.xlsx',
-    },
-    {
-        'filename': 'locales_abs.xlsx',
-        'search':   'ejes comerciales locales vacancia cuatrimestre',
-        'pattern':  r'href="(https://www\.estadisticaciudad\.gob\.ar/eyc/wp-content/uploads/[^"]+(?:ejes|locales|vacancia|AC[_\-]EJ)[^"]*\.xlsx)"',
-        'fallback': 'https://www.estadisticaciudad.gob.ar/eyc/wp-content/uploads/2024/12/Ejes_comerciales_series.xlsx',
-    },
-    {
-        'filename': 'industria_ing.xlsx',
-        'search':   'industria manufacturera ingresos fabriles rama actividad',
-        'pattern':  r'href="(https://www\.estadisticaciudad\.gob\.ar/eyc/wp-content/uploads/[^"]+(?:industria[^"]*ing|ingresos_fabril|ee_industria)[^"]*\.xlsx)"',
-        'fallback': 'https://www.estadisticaciudad.gob.ar/eyc/wp-content/uploads/2024/12/ee_industria_ingresos_fabriles.xlsx',
-    },
-    {
-        'filename': 'industria_pers.xlsx',
-        'search':   'industria manufacturera personal asalariado rama actividad',
-        'pattern':  r'href="(https://www\.estadisticaciudad\.gob\.ar/eyc/wp-content/uploads/[^"]+(?:industria[^"]*pers|personal_asalariado|ee_ind_personal)[^"]*\.xlsx)"',
-        'fallback': 'https://www.estadisticaciudad.gob.ar/eyc/wp-content/uploads/2024/12/ee_ind_personal_asalariado.xlsx',
-    },
-    {
-        'filename': 'pobreza_tasas.xlsx',
-        'search':   'pobreza indigencia hogares personas tasas trimestral CV_AX15',
-        'pattern':  r'href="(https://www\.estadisticaciudad\.gob\.ar/eyc/wp-content/uploads/[^"]+(?:CV[_\-]AX15|pobreza[^"]*tasas|tasas[^"]*pobreza)[^"]*\.xlsx)"',
-        'fallback': 'https://www.estadisticaciudad.gob.ar/eyc/wp-content/uploads/2025/09/CV_AX15.xlsx',
+        'filename':  'locales_abs.xlsx',
+        'categoria': 'ejes-comerciales',
+        # build_macro_data.parse_locales() lee multiples hojas '3er. cuatr. de YYYY'
+        'slug_re':   r'locales-relevados-ocupados-y-desocupados.*53-ejes-comerciales',
     },
 ]
 
+# Posts cuyo slug ya conocemos NO matchean nuestra regex (falsos positivos a evitar)
+# por ahora ninguno, pero dejo la estructura por si aparecen.
 
-def _get_with_retry(url, retries=1, label='get'):
-    """GET con reintentos. Devuelve None si todos los intentos fallan."""
+
+HREF_POST = re.compile(
+    r'href="(https://www\.estadisticaciudad\.gob\.ar/eyc/banco-datos/([^"/]+)/)"',
+    re.I,
+)
+HREF_XLSX = re.compile(
+    r'href="(https://www\.estadisticaciudad\.gob\.ar/eyc/wp-content/uploads/[^"]+\.xlsx)"',
+    re.I,
+)
+
+
+def get(url, label):
+    """GET con 1 reintento. Devuelve response o None."""
     last = None
-    for attempt in range(retries + 1):
+    for attempt in range(2):
         try:
-            r = requests.get(url, headers=H, timeout=TIMEOUT_API)
+            r = requests.get(url, headers=H, timeout=TIMEOUT, allow_redirects=True)
             r.raise_for_status()
             return r
         except Exception as e:
             last = e
-            if attempt < retries:
+            if attempt == 0:
                 time.sleep(2)
-    print(f'   {label} fallo: {str(last)[:80]}', flush=True)
+    print(f'   {label} fallo: {str(last)[:120]}', flush=True)
     return None
 
 
-def find_xlsx_url(search, pattern):
-    """Devuelve el .xlsx mas reciente cuya URL matchee el patron especifico.
-    Si ningun post matchea, devuelve None (no usar fallback generico: peligroso
-    para datasets con multiples aperturas como IPCBA).
-    """
-    r = _get_with_retry(
-        f'{WP_REST}?search={requests.utils.quote(search)}&orderby=date&order=desc&per_page=3',
-        retries=1, label='wp-json',
-    )
+def encontrar_post(categoria, slug_re):
+    """Bajar la categoria, devolver la URL del primer post cuyo slug matchea."""
+    cat_url = CAT_BASE + categoria + '/'
+    r = get(cat_url, f'categoria {categoria}')
     if r is None:
         return None
-    try:
-        posts = r.json()
-    except Exception as e:
-        print(f'   wp-json JSON parse: {e}', flush=True)
-        return None
-    if not posts:
-        return None
-
-    pat = re.compile(pattern, re.I)
-    for post in posts:
-        link = post.get('link')
-        if not link:
-            continue
-        pr = _get_with_retry(link, retries=1, label='post page')
-        if pr is None:
-            continue
-        m = pat.search(pr.text)
-        if m:
-            return m.group(1)
+    pat = re.compile(slug_re, re.I)
+    for m in HREF_POST.finditer(r.text):
+        post_url, slug = m.group(1), m.group(2)
+        if pat.search(slug):
+            return post_url
+    print(f'   ningun post matchea {slug_re!r} en la categoria', flush=True)
     return None
 
 
-def download_with_retry(url, dest, retries=0):
-    # Forzar HTTPS: el servidor IDECBA suele redirigir XLSX a HTTP (port 80) que timea
-    if url.startswith('http://'):
-        url = 'https://' + url[len('http://'):]
-    last = None
-    for attempt in range(retries + 1):
-        try:
-            # allow_redirects=False evita seguir redirects a HTTP que cuelgan
-            r = requests.get(url, headers=H, timeout=TIMEOUT_DL, stream=True, allow_redirects=False)
-            if r.status_code in (301, 302, 303, 307, 308):
-                loc = r.headers.get('Location', '')
-                if loc.startswith('http://'):
-                    loc = 'https://' + loc[len('http://'):]
-                if loc:
-                    r = requests.get(loc, headers=H, timeout=TIMEOUT_DL, stream=True, allow_redirects=False)
-            r.raise_for_status()
-            with open(dest, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=65536):
-                    if chunk:
-                        f.write(chunk)
-            return True
-        except Exception as e:
-            last = e
-            if attempt < retries:
-                time.sleep(2)
-    print(f'   descarga fallo: {str(last)[:80]}', flush=True)
-    return False
+def extraer_xlsx(post_url):
+    """Bajar la pagina del post, devolver la URL del primer XLSX."""
+    r = get(post_url, 'post page')
+    if r is None:
+        return None
+    m = HREF_XLSX.search(r.text)
+    if not m:
+        print(f'   sin .xlsx en {post_url}', flush=True)
+        return None
+    return m.group(1)
+
+
+def descargar(xlsx_url, dest):
+    """Bajar el XLSX forzando HTTPS, sin seguir redirects a HTTP."""
+    if xlsx_url.startswith('http://'):
+        xlsx_url = 'https://' + xlsx_url[len('http://'):]
+    try:
+        r = requests.get(xlsx_url, headers=H, timeout=TIMEOUT, stream=True,
+                         allow_redirects=False)
+        # Si hay redirect, seguir manualmente forzando HTTPS
+        hops = 0
+        while r.status_code in (301, 302, 303, 307, 308) and hops < 3:
+            loc = r.headers.get('Location', '')
+            if not loc:
+                break
+            if loc.startswith('http://'):
+                loc = 'https://' + loc[len('http://'):]
+            elif loc.startswith('/'):
+                loc = 'https://www.estadisticaciudad.gob.ar' + loc
+            r = requests.get(loc, headers=H, timeout=TIMEOUT, stream=True,
+                             allow_redirects=False)
+            hops += 1
+        r.raise_for_status()
+        with open(dest, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=65536):
+                if chunk:
+                    f.write(chunk)
+        return True
+    except Exception as e:
+        print(f'   descarga fallo: {str(e)[:120]}', flush=True)
+        return False
 
 
 def main():
-    print(f'IDECBA · descargando {len(ARCHIVOS)} archivos a {XLSX_DIR}', flush=True)
-    ok, fallback_used, fail = 0, 0, 0
+    print(f'IDECBA · {len(ARCHIVOS)} archivos via categoria-banco-datos', flush=True)
+    ok = 0
     for cfg in ARCHIVOS:
         name = cfg['filename']
         dest = os.path.join(XLSX_DIR, name)
-        print(f'\n[{name}] buscando: {cfg["search"]!r}', flush=True)
-        url = find_xlsx_url(cfg['search'], cfg['pattern'])
-        if url:
-            print(f'   dinamico OK: {url}', flush=True)
-        else:
-            url = cfg['fallback']
-            print(f'   usando fallback: {url}', flush=True)
-            fallback_used += 1
-        if download_with_retry(url, dest):
-            size = os.path.getsize(dest)
-            print(f'   guardado {name} ({size:,} bytes)', flush=True)
-            ok += 1
-        else:
-            # Si la descarga fallo pero el archivo previo existe (del commit), no fallar
-            if os.path.exists(dest):
-                print(f'   manteniendo version previa de {name}', flush=True)
-            else:
-                print(f'   ERROR: {name} no se pudo descargar y no hay version previa', flush=True)
-                fail += 1
+        print(f'\n[{name}] cat={cfg["categoria"]}  slug~{cfg["slug_re"][:60]}', flush=True)
 
-    print(f'\nResumen: {ok}/{len(ARCHIVOS)} bajados · {fallback_used} via fallback · {fail} sin datos', flush=True)
-    # No abortar el workflow si la descarga dinamica falla — los XLSX previos del repo
-    # sirven como respaldo; build_macro_data.py funciona con lo que haya en idecba/.
+        post_url = encontrar_post(cfg['categoria'], cfg['slug_re'])
+        if not post_url:
+            if os.path.exists(dest):
+                print(f'   manteniendo version previa', flush=True)
+            continue
+        print(f'   post: {post_url}', flush=True)
+
+        xlsx_url = extraer_xlsx(post_url)
+        if not xlsx_url:
+            if os.path.exists(dest):
+                print(f'   manteniendo version previa', flush=True)
+            continue
+        print(f'   xlsx: {xlsx_url}', flush=True)
+
+        if descargar(xlsx_url, dest):
+            size = os.path.getsize(dest)
+            print(f'   OK ({size:,} bytes)', flush=True)
+            ok += 1
+        elif os.path.exists(dest):
+            print(f'   manteniendo version previa', flush=True)
+
+    print(f'\nResumen: {ok}/{len(ARCHIVOS)} actualizados', flush=True)
+    # El workflow no debe fallar por archivos que no se actualizaron — los previos sirven
 
 
 if __name__ == '__main__':
