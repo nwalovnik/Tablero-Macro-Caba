@@ -76,6 +76,18 @@ ARCHIVOS = [
         # build_macro_data.parse_comex() lee hoja 'AX_CX_ZON'
         'slug_re':   r'exportaciones-clasificadas-por-continente-y-zona-economica-millones',
     },
+    {
+        'filename':  'autoservicios.xlsx',
+        'categoria': 'autoservicios-mayoristas',
+        # build_macro_data.parse_autoservicios() lee hoja 'AC_M_01'
+        'slug_re':   r'ventas-a-valores-constantes-en-autoservicios-mayoristas-variacion-interanual',
+    },
+    {
+        'filename':  'shoppings.xlsx',
+        'categoria': 'centros-de-compras',
+        # build_macro_data.parse_shoppings() lee hoja 'AC_CC_AX07'
+        'slug_re':   r'variacion-interanual-del-indice-a-valores-constantes-base-2021100-de-ventas-por-rubro-en-centros-de-compras',
+    },
 ]
 
 # Posts cuyo slug ya conocemos NO matchean nuestra regex (falsos positivos a evitar)

@@ -373,6 +373,105 @@ def parse_pobreza_tasas():
         'ind_per_abs': ind_per_abs,
     }
 
+# ── Autoservicios mayoristas (consumo masivo) ──────────
+MESES_ES = {
+    'enero':1,'febrero':2,'marzo':3,'abril':4,'mayo':5,'junio':6,
+    'julio':7,'agosto':8,'septiembre':9,'octubre':10,'noviembre':11,'diciembre':12,
+}
+
+def _norm(s):
+    """Normalize string for comparison (lower, no accents, strip)."""
+    if s is None: return ''
+    s = str(s).strip().lower()
+    repl = {'á':'a','é':'e','í':'i','ó':'o','ú':'u','ñ':'n'}
+    for k,v in repl.items(): s = s.replace(k,v)
+    return s
+
+def parse_autoservicios():
+    """AC_M_01.xlsx — variación interanual % de ventas a valores constantes.
+    Col 0: alterna 'YYYY' (fila resumen anual) y nombres de mes.
+    Col 1: var. i.a. %.
+    """
+    wb = openpyxl.load_workbook(os.path.join(XLSX, 'autoservicios.xlsx'), data_only=True)
+    ws = wb['AC_M_01']
+    rows = list(ws.iter_rows(values_only=True))
+    periodos, var_ia = [], []
+    cur_year = None
+    for row in rows[2:]:   # filas 0-1 son títulos/header
+        if row[0] is None:
+            continue
+        cell = str(row[0]).strip()
+        # Año
+        try:
+            y = int(float(cell.replace('*','').strip()))
+            if 2000 <= y <= 2100:
+                cur_year = y
+                continue
+        except Exception:
+            pass
+        # Mes
+        m = MESES_ES.get(_norm(cell).replace('*','').strip())
+        if m is None or cur_year is None:
+            continue
+        v = row[1]
+        try:
+            val = round(float(v), 2) if v is not None else None
+        except Exception:
+            val = None
+        periodos.append(f'{cur_year}-{m:02d}')
+        var_ia.append(val)
+    return {'periodos': periodos, 'var_ia': var_ia,
+            'fuente': 'IDECBA · AC_M_01.xlsx'}
+
+
+# ── Shoppings (centros de compras, ventas por rubro) ───
+def parse_shoppings():
+    """AC_CC_AX07.xlsx — variación i.a. % de ventas constantes por rubro.
+    Fila 2: header ('Período','Rubro').
+    Fila 3: nombres de rubros en columnas 1..N.
+    Filas 4+: alterna 'YYYY' y meses, valores por rubro en cada columna.
+    """
+    wb = openpyxl.load_workbook(os.path.join(XLSX, 'shoppings.xlsx'), data_only=True)
+    ws = wb['AC_CC_AX07']
+    rows = list(ws.iter_rows(values_only=True))
+    header = rows[3]
+    # Detectar columnas con nombre de rubro (no None y no nota al pie)
+    rubros_idx = []
+    for i, name in enumerate(header[1:], 1):
+        if name is None: break
+        s = str(name).strip()
+        if not s or s.startswith('.') or len(s) < 3: break
+        rubros_idx.append((i, s))
+    rubros = {name: [] for _, name in rubros_idx}
+    periodos = []
+    cur_year = None
+    for row in rows[4:]:
+        if row[0] is None:
+            continue
+        cell = str(row[0]).strip()
+        # Año
+        try:
+            y = int(float(cell.replace('*','').strip()))
+            if 2000 <= y <= 2100:
+                cur_year = y
+                continue
+        except Exception:
+            pass
+        m = MESES_ES.get(_norm(cell).replace('*','').strip())
+        if m is None or cur_year is None:
+            # Llegamos a notas al pie / texto
+            break
+        periodos.append(f'{cur_year}-{m:02d}')
+        for col_i, name in rubros_idx:
+            v = row[col_i] if col_i < len(row) else None
+            try:
+                rubros[name].append(round(float(v), 2) if v is not None else None)
+            except Exception:
+                rubros[name].append(None)
+    return {'periodos': periodos, 'rubros': rubros,
+            'fuente': 'IDECBA · AC_CC_AX07.xlsx'}
+
+
 # ── Comercio exterior (exportaciones) ──────────────────
 def parse_comex():
     """Parsea exportaciones CABA.
@@ -417,8 +516,15 @@ def parse_comex():
             break
     n_years = len(anios_zona)
 
-    # Zonas continentales principales (excluye sub-zonas y notas al pie)
-    ZONAS_OK = {'Total', 'América', 'Europa', 'Asia', 'África', 'Oceanía', 'Indeterminado'}
+    # Zonas: bloques económicos sub-continentales + Total y continentes principales
+    # Esto da más detalle al chart de "Top zonas económicas"
+    ZONAS_OK = {
+        'Total', 'América', 'MERCOSUR', 'USMCA', 'MCCA', 'Resto de América',
+        'Europa', 'Unión Europea', 'Resto de Europa',
+        'Asia', 'ASEAN', 'Resto de Asia',
+        'África', 'SACU', 'Resto de África',
+        'Oceanía', 'Indeterminado',
+    }
     STOP_PREFIXES = ('.', 'Nota', 'Fuente', 'Desde', 'La info', 'Indeterm comprende')
     por_zona = {}
     for row in rows_z[2:]:
@@ -474,6 +580,8 @@ def main():
         'poblacion': parse_poblacion(),
         'pobreza_tasas': parse_pobreza_tasas(),
         'comex': parse_comex(),
+        'autoservicios': parse_autoservicios(),
+        'shoppings': parse_shoppings(),
         'fuente': 'IDECBA — Instituto de Estadística y Censos GCBA',
         'generado': datetime.now().strftime('%Y-%m-%d'),
     }
@@ -485,7 +593,7 @@ def main():
         'periodos': c['meses'],
         'lp_hogares': [[None, v, None, None, None] for v in c['total']],
         'li_hogares': [[None, v, None, None, None] for v in c['ca']],
-        'hogares_labels': ['Hogar 1', 'Pareja c/ 2 hijos', 'Hogar 3', 'Hogar 4', 'Hogar 5'],
+        'hogares_labels': [None, 'Pareja c/ 2 hijos', None, None, None],
     }
     with open(OUT, 'w', encoding='utf-8') as f:
         json.dump(out, f, ensure_ascii=False, separators=(',',':'))
@@ -503,5 +611,9 @@ def main():
     cx = out['comex']
     print(f'  comex: {len(cx["anios"])} años ({cx["anios"][0]}-{cx["anios"][-1]}) USD={cx["exportaciones_usd"][-1]:,} zonas={list(cx["por_zona"].keys())}')
     print(f'  pobreza (derivada): {len(out["pobreza"]["periodos"])} meses, último LP={out["pobreza"]["lp_hogares"][-1][1]}')
+    aut = out['autoservicios']
+    print(f'  autoservicios: {len(aut["periodos"])} meses ({aut["periodos"][0]}..{aut["periodos"][-1]}) últ. var.i.a.={aut["var_ia"][-1]}')
+    shp = out['shoppings']
+    print(f'  shoppings: {len(shp["periodos"])} meses ({shp["periodos"][0]}..{shp["periodos"][-1]}) {len(shp["rubros"])} rubros')
 
 if __name__=='__main__': main()
