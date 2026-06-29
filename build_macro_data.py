@@ -636,6 +636,81 @@ def parse_comex():
     }
 
 
+# ── Locales por comuna (48 ejes, 2025+) ───────────────
+# Mapeo: '1er. cuatr. de 2026 ' -> '2026-C1', etc.
+_CUATR = {'1er':'C1', '2do':'C2', '3er':'C3'}
+def _sheet_to_periodo_v2(name):
+    import re
+    s = name.strip()
+    m = re.search(r'(\d{4})', s)
+    if not m: return None
+    y = m.group(1)
+    for k, code in _CUATR.items():
+        if k in s: return f'{y}-{code}'
+    return None
+
+def parse_locales_comuna():
+    """AC_EJ_2026_04.xlsx — locales relevados/ocupados, tasa ocupación, etc.
+    Una hoja por cuatrimestre. Cada hoja: fila 1=header, fila 2=Total CABA,
+    filas 3-17 = comunas 1..15. Cols: Comuna | Relevados | Ocupados | Tasa Ocup % | VarRelev | VarIA | Densidad.
+    """
+    wb = openpyxl.load_workbook(os.path.join(XLSX, 'ejes48_comuna_tasas.xlsx'), data_only=True)
+    periodos = []
+    # comunas[i] (i=1..15) = lista de dicts por periodo {relevados, ocupados, tasa_ocupacion, var_ia, densidad}
+    # total = mismo dict para CABA
+    by_comuna = {str(i): [] for i in range(1, 16)}
+    total = []
+    for sh_name in wb.sheetnames:
+        per = _sheet_to_periodo_v2(sh_name)
+        if not per: continue
+        ws = wb[sh_name]
+        rows = list(ws.iter_rows(values_only=True))
+        # Detectar fila de datos: la primera fila después del header que tenga 'Total' en col 0
+        # o donde col 0 sea un número
+        per_data = {'total': None, 'comunas': {}}
+        for row in rows[2:]:   # 0=título, 1=header
+            if row[0] is None: continue
+            key = str(row[0]).strip()
+            def _f(v):
+                try: return round(float(v), 3) if v is not None else None
+                except: return None
+            entry = {
+                'relevados': _f(row[1]),
+                'ocupados':  _f(row[2]),
+                'tasa_ocup': _f(row[3]),
+                'var_inter': _f(row[4]),
+                'var_ia':    _f(row[5]),
+                'densidad':  _f(row[6]),
+            }
+            if 'Total' in key:
+                per_data['total'] = entry
+            else:
+                try:
+                    cid = str(int(float(key)))
+                    if 1 <= int(cid) <= 15:
+                        per_data['comunas'][cid] = entry
+                except Exception:
+                    pass
+        if per_data['total'] is None:
+            continue
+        periodos.append(per)
+        total.append(per_data['total'])
+        for cid in range(1, 16):
+            by_comuna[str(cid)].append(per_data['comunas'].get(str(cid)))
+    # Ordenar por periodo (cronológicamente)
+    order = sorted(range(len(periodos)), key=lambda i: periodos[i])
+    periodos = [periodos[i] for i in order]
+    total = [total[i] for i in order]
+    for cid in by_comuna:
+        by_comuna[cid] = [by_comuna[cid][i] for i in order]
+    return {
+        'periodos': periodos,
+        'total': total,
+        'comunas': by_comuna,
+        'fuente': 'IDECBA · AC_EJ_2026_04.xlsx · 48 ejes comerciales por comuna',
+    }
+
+
 # ── Población por comuna ────────────────────────────────
 def parse_poblacion():
     wb = xlrd.open_workbook(os.path.join(XLSX,'pob_comuna.xls'))
@@ -658,6 +733,7 @@ def main():
         'canastas': parse_canastas(),
         'empleo': parse_empleo(),
         'locales': parse_locales(),
+        'locales_comuna': parse_locales_comuna(),
         'industria_ingresos': parse_industria('ingresos'),
         'industria_personal': parse_industria('personal'),
         'poblacion': parse_poblacion(),
@@ -689,6 +765,9 @@ def main():
     print(f'  canastas: {len(out["canastas"]["meses"])} meses, último: {out["canastas"]["meses"][-1]} CA={out["canastas"]["ca"][-1]} total={out["canastas"]["total"][-1]}')
     print(f'  empleo: {len(out["empleo"]["trimestres"])} trims, último: {out["empleo"]["trimestres"][-1]} desoc={out["empleo"]["desocupacion"][-1]}')
     print(f'  locales: {len(out["locales"]["periodos"])} periodos, ejes: {list(out["locales"]["ejes"].keys())[:5]}')
+    lc = out['locales_comuna']
+    last_t = lc['total'][-1] if lc['total'] else {}
+    print(f'  locales_comuna: {len(lc["periodos"])} cuatrimestres ({lc["periodos"][0]}..{lc["periodos"][-1]}) tasa ocup. total último={last_t.get("tasa_ocup")}%')
     print(f'  industria_ing: {len(out["industria_ingresos"]["periodos"])} meses, último: {out["industria_ingresos"]["periodos"][-1]}')
     print(f'  poblacion: {len(out["poblacion"]["comunas"])} comunas, años {out["poblacion"]["años"][0]}-{out["poblacion"]["años"][-1]}')
     pob = out['pobreza_tasas']

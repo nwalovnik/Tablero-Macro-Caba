@@ -65,6 +65,12 @@ ARCHIVOS = [
         'slug_re':   r'locales-relevados-ocupados-y-desocupados.*53-ejes-comerciales',
     },
     {
+        'filename':  'ejes48_comuna_tasas.xlsx',
+        'categoria': 'ejes-comerciales',
+        # 48 ejes (nueva metodología desde 2025): tasa ocupación por comuna, 4 cuatrimestres
+        'slug_re':   r'locales-relevados-ocupados-densidad-comercial-tasa-de-ocupacion.*por-comuna-48-ejes',
+    },
+    {
         'filename':  'comex_tot.xlsx',
         'categoria': 'comercio-exterior',
         # build_macro_data.parse_comex() lee hoja 'AX_CX_TOT'
