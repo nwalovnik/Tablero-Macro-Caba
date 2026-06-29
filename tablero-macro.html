@@ -668,7 +668,7 @@ tr:last-child td{border-bottom:none}
 </section>
 
   <div class="note">
-    <b>Notas metodológicas.</b> Publicaciones oficiales de la <b>Dirección General de Estadística y Censos (IDECBA)</b> del GCBA. IPCBA base IV trim 2021 = 100. IAE base promedio 2012 = 100. Canastas de consumo: hogar 1a. Locales comerciales: releva 53 ejes comerciales seleccionados; no es representativo del total de la Ciudad. Empleo: Encuesta Trimestral de Ocupación e Ingresos (ETOI). Población: proyecciones oficiales por comuna 2022–2035.
+    <b>Notas metodológicas.</b> Publicaciones oficiales de la <b>Dirección General de Estadística y Censos (IDECBA)</b> del GCBA. IPCBA base IV trim 2021 = 100. IAE base promedio 2012 = 100. Canastas de consumo: hogar 1a. Locales comerciales: releva 48 ejes comerciales seleccionados con apertura por comuna; no es representativo del total de la Ciudad. Empleo: Encuesta Trimestral de Ocupación e Ingresos (ETOI). Población: proyecciones oficiales por comuna 2022–2035.
   </div>
 
 </div>
@@ -709,18 +709,24 @@ const empT = emp.empleo[empLastI];
 const actT = emp.actividad[empLastI];
 const empTrim = emp.trimestres[empLastI];
 
-// Vacancia = 100 - ocupación (Total General), último periodo
-const tg = loc.ejes['Total General'] || [];
-const ocuLast = tg[tg.length-1];
-const vacLast = ocuLast!=null ? +(100-ocuLast).toFixed(1) : null;
-const vacPerLast = loc.periodos[loc.periodos.length-1];
+// Vacancia desde MACRO.locales_comuna (48 ejes, 2025+).
+let vacLast = null, vacPerLast = null;
+const lc48 = (typeof MACRO !== 'undefined') ? MACRO.locales_comuna : null;
+if (lc48 && lc48.periodos && lc48.periodos.length && lc48.total) {
+  const lastIx48 = lc48.periodos.length - 1;
+  const tot = lc48.total[lastIx48];
+  if (tot && tot.tasa_ocup != null) {
+    vacLast = +(100 - tot.tasa_ocup).toFixed(1);
+    vacPerLast = lc48.periodos[lastIx48];
+  }
+}
 
 const cls=v=>v==null?'':v>10?'bad':v>5?'warn':'ok';
 const kpis=[
   {c:ipcIaLast>30?'bad':ipcIaLast>10?'warn':'ok',l:'IPCBA · i.a.',v:fmtPct(ipcIaLast,1),s:mesFmtLong(lastMes)+' vs año anterior'},
   {c:ipcMLast>3?'warn':'ok',l:'IPCBA · mensual',v:fmtPct(ipcMLast,1),s:mesFmtLong(lastMes)},
   {c:iaeVarLast>=0?'ok':'bad',l:'Actividad económica',v:fmtPct(iaeVarLast,1),s:(iaeTrimLast||'').replace('-T',' · T')+' · PGB i.a.'},
-  {c:cls(vacLast),l:'Locales vacantes',v:vacLast==null?'—':vacLast.toFixed(1).replace('.',',')+'%',s:vacPerLast+' · 53 ejes'},
+  {c:cls(vacLast),l:'Locales vacantes',v:vacLast==null?'—':vacLast.toFixed(1).replace('.',',')+'%',s:vacPerLast+' · 48 ejes'},
   {c:'',l:'Tasa de empleo',v:empT==null?'—':empT.toFixed(1).replace('.',',')+'%',s:empTrim+' · ETOI'},
   {c:cls(desoc),l:'Desocupación',v:desoc==null?'—':desoc.toFixed(1).replace('.',',')+'%',s:empTrim+' · ETOI'},
 ];
@@ -1132,9 +1138,7 @@ document.getElementById('tagEmp').textContent = empTrim;
   document.getElementById('pobAbsSub').textContent = `Hogares y personas bajo LP/LI · CABA · ${_qLbl(ult)}`;
 })();
 
-// === Mapa de vacancia por eje (LEGACY 53 ejes) — eliminado ===
-// El mapa por COMUNA (48 ejes) lo reemplaza. Coordenadas histor. de 53 ejes
-// se mantienen comentadas por si IDECBA vuelve al formato eje a futuro.
+// (Tabla EJES_COORDS sin uso activo; queda como referencia opcional)
 const __EJES_COORDS_LEGACY = {
   'Florida':[-34.6013,-58.3763], 'Microcentro':[-34.6046,-58.3783], 'Puerto Madero':[-34.6115,-58.3628],
   'Monserrat':[-34.6133,-58.3786], 'Once':[-34.6091,-58.4050], 'Libertad':[-34.5967,-58.3844],
@@ -2551,14 +2555,14 @@ window.reRenderIndustria = function() {
     slides.push(placaCover({fmt,bg:'bg-blue',kind:'comercio',
       tag:`Locales y empleo · ${vacPeriodo}`,
       title:`Comercio<br><span class="acc" style="color:#22C55E">y empleo</span>`,
-      sub:`Vacancia comercial en 53 ejes relevados · mercado laboral · Encuesta Trimestral de Ocupación e Ingresos`,
+      sub:`Vacancia comercial en 48 ejes relevados · mercado laboral · Encuesta Trimestral de Ocupación e Ingresos`,
       bottom:'Observatorio USINA · datos IDECBA'
     }));
 
     // 2. Vacancia headline
     const vacChart = captureCanvas('chVac');
     slides.push(placaShell({fmt,bg:'bg-light',kind:'comercio',cat:'VACANCIA · 53 EJES',page:1,totalPages:n,
-      src:`Fuente: IDECBA · Comercio minorista · 53 ejes comerciales · ${vacPeriodo}`,
+      src:`Fuente: IDECBA · Comercio minorista · 48 ejes comerciales · ${vacPeriodo}`,
       body:`<h1 class="pl-h">${vacDelta>=0?'<span class="hl">Subió</span>':'<span class="hl-cyan">Bajó</span>'} la vacancia de locales en ejes comerciales.</h1>
       <div class="pl-lead">En el ${vacPeriodo}, el promedio Total General fue <b>${pctNS(vac,1)}</b>, una ${vacDelta>=0?'suba':'baja'} de <b>${pp(Math.abs(vacDelta),1).replace('+','')}</b> respecto del cuatrimestre anterior. Tasa de ocupación: <b>${pctNS(100-vac,1)}</b>.</div>
       <div class="pl-bigwrap"><div class="pl-bignum green">${pctNS(vac,1)}</div><div class="pl-bigsub">Vacancia promedio · Total General</div></div>
@@ -2570,7 +2574,7 @@ window.reRenderIndustria = function() {
     const top10 = ejesAll.slice(0,10).map(x=>({label:x.label, value:x.value, color:'#E84A5F'}));
     const imgT = chartBarrasHorizontalesPNG(top10,{w:920,h:top10.length*48+24,labelColor:'#0C2340',bg:'#fff'});
     slides.push(placaShell({fmt,bg:'bg-dark',kind:'comercio',cat:'TOP 10 · MAYOR VACANCIA',page:2,totalPages:n,
-      src:`Fuente: IDECBA · 53 ejes comerciales · ${vacPeriodo}`,
+      src:`Fuente: IDECBA · 48 ejes comerciales · ${vacPeriodo}`,
       body:`<h1 class="pl-h">Los <span class="hl">10 ejes</span> con más locales vacantes.</h1>
       <div class="pl-lead">Ranking por % de vacancia. Útil como termómetro adelantado del comercio minorista por zona.</div>
       <div class="pl-chartwrap"><div class="ct">% locales vacantes · ${vacPeriodo}</div><img src="${imgT}" alt=""></div>`
@@ -3081,14 +3085,14 @@ ${takeaways([
     const body = `
 <h2>De un vistazo</h2>
 ${kpiGrid([
-  {lbl:'Vacancia promedio', val:pctNS(vac,1), vsub:'53 ejes · '+vacPeriodo},
+  {lbl:'Vacancia promedio', val:pctNS(vac,1), vsub:'48 ejes · '+vacPeriodo},
   {lbl:'Δ cuatrimestre', val:pp(vacDelta,1), vsub:'pp vs cuatr. previo'},
   {lbl:'Desocupación', val:pctNS(desoc,1), vsub:empPeriodo},
 ])}
 
 ${datoHero(pctNS(vac,1),'es la vacancia promedio en los ejes comerciales porteños','Tasa de ocupación: '+pctNS(100-vac,1)+' · '+pp(vacDelta,1)+' vs cuatrimestre previo')}
 
-<p>La vacancia promedio sobre los <b>53 ejes comerciales</b> relevados se ubicó en <b>${pctNS(vac,1)}</b> en el ${vacPeriodo}, una ${direccion_vac} de <b>${pp(Math.abs(vacDelta),1).replace('+','')}</b> respecto del cuatrimestre anterior. La tasa de ocupación se ubica en <b>${pctNS(100-vac,1)}</b>. En el mercado laboral, la desocupación porteña fue de <b>${pctNS(desoc,1)}</b> en el ${empPeriodo}, una variación de <b>${pp(desocDelta,1)}</b> vs trimestre previo.</p>
+<p>La vacancia promedio sobre los <b>48 ejes comerciales</b> relevados se ubicó en <b>${pctNS(vac,1)}</b> en el ${vacPeriodo}, una ${direccion_vac} de <b>${pp(Math.abs(vacDelta),1).replace('+','')}</b> respecto del cuatrimestre anterior. La tasa de ocupación se ubica en <b>${pctNS(100-vac,1)}</b>. En el mercado laboral, la desocupación porteña fue de <b>${pctNS(desoc,1)}</b> en el ${empPeriodo}, una variación de <b>${pp(desocDelta,1)}</b> vs trimestre previo.</p>
 ${chartImgTag(vacChart)}
 
 <h2>Mapa comercial: dónde se encienden las luces de alerta</h2>
@@ -3097,7 +3101,7 @@ ${chartImgTag(vacChart)}
 <table><thead><tr><th>Eje comercial</th><th style="text-align:right">Vacancia</th><th style="text-align:right">Δ cuatrimestre</th></tr></thead><tbody>${filasTop}</tbody></table>
 <h3>Top 10 ejes con menor vacancia</h3>
 <table><thead><tr><th>Eje comercial</th><th style="text-align:right">Vacancia</th><th style="text-align:right">Δ cuatrimestre</th></tr></thead><tbody>${filasBot}</tbody></table>
-<div class="tech"><span class="label">Lectura técnica · vacancia</span>Un cuatrimestre aislado puede no ser concluyente; se recomienda observar al menos 4-6 cuatrimestres para identificar tendencia. La metodología de IDECBA reporta promedios simples sobre los 53 ejes seleccionados; comparar con un promedio ponderado por superficie comercial podría modificar el ranking. La cobertura no es representativa del universo total de comercios de la Ciudad sino de ejes pre-seleccionados como representativos del comercio minorista.</div>
+<div class="tech"><span class="label">Lectura técnica · vacancia</span>Un cuatrimestre aislado puede no ser concluyente; se recomienda observar al menos 4-6 cuatrimestres para identificar tendencia. La metodología de IDECBA reporta promedios simples sobre los 48 ejes seleccionados; comparar con un promedio ponderado por superficie comercial podría modificar el ranking. La cobertura no es representativa del universo total de comercios de la Ciudad sino de ejes pre-seleccionados como representativos del comercio minorista.</div>
 
 <h2 class="section-break">El mercado de trabajo porteño · ETOI ${empPeriodo}</h2>
 ${datoHero(pctNS(desoc,1),'es la tasa de desocupación porteña','Δ '+pp(desocDelta,1)+' vs trim. previo · tasa de actividad: '+pctNS(tasaAct,1)+' · tasa de empleo: '+pctNS(tasaEmp,1))}
@@ -3134,12 +3138,12 @@ ${takeaways([
   `<b>Variables a monitorear.</b> ventas minoristas (CAME), evolución del PGB sectorial Comercio, salarios reales y consumo eléctrico residencial como complementos.`,
 ])}
 
-<div class="metodo"><b>Notas metodológicas.</b> Locales comerciales: relevamiento cuatrimestral sobre 53 ejes seleccionados; la unidad de análisis es el local comercial visible desde la calle; no es representativo del universo total de comercios de la Ciudad. ETOI: Encuesta Trimestral de Ocupación e Ingresos; cobertura aglomerado Ciudad de Buenos Aires; las tasas se calculan sobre la población total y la PEA; para comparaciones interanuales conviene observar al menos dos trimestres consecutivos por la estacionalidad. Fuente: IDECBA — Dirección General de Estadística y Censos del GCBA.</div>
+<div class="metodo"><b>Notas metodológicas.</b> Locales comerciales: relevamiento cuatrimestral sobre 48 ejes seleccionados con apertura por comuna; la unidad de análisis es el local comercial visible desde la calle; no es representativo del universo total de comercios de la Ciudad. ETOI: Encuesta Trimestral de Ocupación e Ingresos; cobertura aglomerado Ciudad de Buenos Aires; las tasas se calculan sobre la población total y la PEA; para comparaciones interanuales conviene observar al menos dos trimestres consecutivos por la estacionalidad. Fuente: IDECBA — Dirección General de Estadística y Censos del GCBA.</div>
 `;
     return informeShell({
       title: `Comercio minorista y mercado laboral porteño en ${vacPeriodo} / ${empPeriodo}: vacancia, ranking de ejes y ETOI`,
       cat: 'COMERCIO Y EMPLEO',
-      lead: `La vacancia promedio en los 53 ejes comerciales relevados se ubicó en <b>${pctNS(vac,1)}</b> en el ${vacPeriodo} (${pp(vacDelta,1)} vs cuatr. previo). En paralelo, la desocupación porteña fue de <b>${pctNS(desoc,1)}</b> en el ${empPeriodo}. La lectura cruzada permite identificar si comercio y empleo se mueven en simultáneo (ciclo) o de forma divergente (transformación estructural).`,
+      lead: `La vacancia promedio en los 48 ejes comerciales relevados se ubicó en <b>${pctNS(vac,1)}</b> en el ${vacPeriodo} (${pp(vacDelta,1)} vs cuatr. previo). En paralelo, la desocupación porteña fue de <b>${pctNS(desoc,1)}</b> en el ${empPeriodo}. La lectura cruzada permite identificar si comercio y empleo se mueven en simultáneo (ciclo) o de forma divergente (transformación estructural).`,
       body
     });
   }
