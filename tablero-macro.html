@@ -67,8 +67,8 @@ body{font-family:var(--body);background:#fff;color:var(--navy);font-size:14px;li
 .ch.tall{height:340px}
 @media(min-width:700px){.ch.tall{height:420px}}
 
-#map,#mapVac{height:360px;border-radius:8px;overflow:hidden}
-@media(min-width:700px){#map,#mapVac{height:480px}}
+#map,#mapComuna{height:360px;border-radius:8px;overflow:hidden}
+@media(min-width:700px){#map,#mapComuna{height:480px}}
 .legend{display:flex;gap:10px;margin-top:10px;font-size:10.5px;color:var(--gray700);flex-wrap:wrap}
 .legend span{display:inline-flex;align-items:center;gap:5px}
 .legend i{width:11px;height:11px;border-radius:2px;display:inline-block}
@@ -536,18 +536,6 @@ tr:last-child td{border-bottom:none}
 
   <div class="section-lbl">Comercio</div>
   <h2 class="section-h">Locales comerciales y empleo</h2>
-
-  <div class="card" style="margin-bottom:14px">
-    <div class="card-hd"><div><h3>Mapa de vacancia por eje comercial</h3><div class="card-sub" id="vacMapSub">% de locales vacantes · último cuatrimestre</div></div><span class="card-tag" id="tagVacMap">—</span></div>
-    <div id="mapVac"></div>
-    <div class="legend">
-      <span><i style="background:#0A8A5A"></i>&lt; 5%</span>
-      <span><i style="background:#6AADE4"></i>5–10%</span>
-      <span><i style="background:#C06A00"></i>10–15%</span>
-      <span><i style="background:#C0392B"></i>&gt; 15%</span>
-      <span style="color:var(--gray500)">Tamaño ∝ vacancia</span>
-    </div>
-  </div>
 
   <div class="card" style="margin-bottom:14px">
     <div class="card-hd">
@@ -1144,8 +1132,10 @@ document.getElementById('tagEmp').textContent = empTrim;
   document.getElementById('pobAbsSub').textContent = `Hogares y personas bajo LP/LI · CABA · ${_qLbl(ult)}`;
 })();
 
-// === Mapa de vacancia por eje comercial ===
-const EJES_COORDS = {
+// === Mapa de vacancia por eje (LEGACY 53 ejes) — eliminado ===
+// El mapa por COMUNA (48 ejes) lo reemplaza. Coordenadas histor. de 53 ejes
+// se mantienen comentadas por si IDECBA vuelve al formato eje a futuro.
+const __EJES_COORDS_LEGACY = {
   'Florida':[-34.6013,-58.3763], 'Microcentro':[-34.6046,-58.3783], 'Puerto Madero':[-34.6115,-58.3628],
   'Monserrat':[-34.6133,-58.3786], 'Once':[-34.6091,-58.4050], 'Libertad':[-34.5967,-58.3844],
   'Córdoba Facultad':[-34.5993,-58.3966], 'Córdoba Tribunales':[-34.6033,-58.3832],
@@ -1172,37 +1162,7 @@ const EJES_COORDS = {
   'Parque Patricios':[-34.6408,-58.4052], 'Riestra':[-34.6671,-58.4534],
   'Sáenz':[-34.6537,-58.4116]
 };
-const colorVac=v=>v==null?'#9CA3AF':v<5?'#0A8A5A':v<10?'#6AADE4':v<15?'#C06A00':'#C0392B';
-const mapVac=L.map('mapVac',{scrollWheelZoom:false}).setView([-34.61,-58.44],12);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{attribution:'© OpenStreetMap © CARTO',maxZoom:18}).addTo(mapVac);
-const lastVacIdx = loc.periodos.length-1;
-const _fmtLocN = n => n!=null ? n.toLocaleString('es-AR') : '—';
-let vacPlotted = 0;
-Object.entries(EJES_COORDS).forEach(([eje,ll])=>{
-  const serie = loc.ejes[eje];
-  if(!serie) return;
-  const ocu = serie[lastVacIdx];
-  if(ocu==null) return;
-  const vac = +(100-ocu).toFixed(1);
-  const relev  = loc.relevados?.[eje]?.[lastVacIdx] ?? null;
-  const nOcup  = loc.ocupados?.[eje]?.[lastVacIdx]  ?? null;
-  const nDesoc = loc.desocupados?.[eje]?.[lastVacIdx] ?? null;
-  const varIA  = loc.var_ia?.[eje]?.[lastVacIdx]   ?? null;
-  const absLine = relev!=null
-    ? `<br><span style="color:#374151;font-size:11px">Ocupados: <b>${_fmtLocN(nOcup)}</b> · Vacantes: <b>${_fmtLocN(nDesoc)}</b> de ${_fmtLocN(relev)} relevados</span>`
-    : '';
-  const iaLine = varIA!=null
-    ? `<br><span style="font-size:10.5px;color:${varIA>=0?'#0A8A5A':'#C0392B'}">Var. i.a. ocu.: ${varIA>=0?'+':''}${varIA.toFixed(1).replace('.',',')} pp</span>`
-    : '';
-  const r = 5 + Math.min(vac,30)*0.7;
-  L.circleMarker(ll,{radius:r,fillColor:colorVac(vac),color:'#fff',weight:1.5,fillOpacity:.85})
-    .bindPopup(`<b>${eje}</b><br>Vacancia: <b>${vac.toFixed(1).replace('.',',')}%</b> · Ocupación: ${ocu.toFixed(1).replace('.',',')}%${absLine}${iaLine}<br><span style="font-size:10.5px;color:#6B7280">${vacPerLast.replace('-',' · ')}</span>`)
-    .addTo(mapVac);
-  vacPlotted++;
-});
-document.getElementById('tagVacMap').textContent = vacPerLast+' · '+vacPlotted+' ejes';
-document.getElementById('vacMapSub').textContent = '% de locales vacantes · '+vacPerLast.replace('-',' · ')+' · IDECBA';
-setTimeout(()=>mapVac.invalidateSize(),200);
+// (Bloque mapVac eliminado: el mapa por comuna 48 ejes lo reemplaza)
 
 // === Mapa de desocupación comercial por COMUNA (48 ejes, 2025+) ===
 (function(){
@@ -3776,22 +3736,6 @@ ${takeaways([
       cardHd.appendChild(btn);
     }
   });
-
-  // Boton extra para el mapa de vacancia (no tiene canvas pero comparte dataset chVac)
-  const mapEl = document.getElementById('mapVac');
-  if (mapEl) {
-    const card = mapEl.closest('.card');
-    const cardHd = card && card.querySelector('.card-hd');
-    if (cardHd && !cardHd.querySelector('.dl-btn')) {
-      const tag = cardHd.querySelector('.card-tag');
-      const btn = document.createElement('button');
-      btn.type='button'; btn.className='dl-btn'; btn.title='Descargar datos';
-      btn.textContent='⬇ XLSX';
-      btn.addEventListener('click', () => downloadDataset('chVac'));
-      if (tag && tag.parentNode===cardHd) cardHd.insertBefore(btn, tag.nextSibling);
-      else cardHd.appendChild(btn);
-    }
-  }
 
   console.log('[tabs] inicializado · grupos:',
     Object.fromEntries(Object.entries(groups).map(([k,v])=>[k,v.length])));
