@@ -2111,12 +2111,17 @@ window.reRenderIndustria = function() {
   const ramaTop = ramasVar[0];
   const ramaWorst = ramasVar[ramasVar.length-1];
 
-  // Vacancia (locales)
-  const tg = loc.ejes['Total General']||[];
-  const vac = 100 - tg.slice(-1)[0];
-  const vacPrev = 100 - (tg.slice(-2,-1)[0]||0);
-  const vacDelta = vac - vacPrev;
-  const vacPeriodo = periodoCuat(loc.periodos.slice(-1)[0]);
+  // Vacancia (locales) — desde MACRO.locales_comuna (48 ejes, 2025+)
+  const _lc48p = MACRO.locales_comuna || {};
+  const _lc48ps = _lc48p.periodos || [];
+  const _lc48ts = _lc48p.total || [];
+  const _ix = _lc48ps.length - 1;
+  const _toUlt = _ix >= 0 ? _lc48ts[_ix] : null;
+  const _toPrev = _ix >= 1 ? _lc48ts[_ix-1] : null;
+  const vac = (_toUlt && _toUlt.tasa_ocup != null) ? +(100 - _toUlt.tasa_ocup).toFixed(1) : null;
+  const vacPrev = (_toPrev && _toPrev.tasa_ocup != null) ? +(100 - _toPrev.tasa_ocup).toFixed(1) : null;
+  const vacDelta = (vac != null && vacPrev != null) ? +(vac - vacPrev).toFixed(1) : null;
+  const vacPeriodo = _ix >= 0 ? periodoCuat(_lc48ps[_ix]) : '—';
 
   // Empleo
   const desoc = emp.desocupacion.slice(-1)[0];
