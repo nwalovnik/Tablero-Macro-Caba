@@ -13,7 +13,7 @@ Estrategia:
 Si cualquier paso falla, mantenemos la version previa committeada del XLSX en
 idecba/ — build_macro_data.py va a procesar lo que haya.
 
-Archivos que no estan acá (empleo, industria, pobreza_tasas) se mantienen con la
+Archivos que no estan acá (industria, pobreza_tasas) se mantienen con la
 version committeada porque los parsers de build_macro_data.py esperan layouts
 muy especificos y no es trivial encontrar un equivalente actualizado en banco_datos.
 """
@@ -105,6 +105,12 @@ ARCHIVOS = [
         'categoria': 'industria',
         # build_macro_data.parse_masa_salarial() lee hoja 'ee_industria_masa_salarial'
         'slug_re':   r'masa-salarial-por-rama-de-actividad-indice-base-octubre-2001',
+    },
+    {
+        'filename':  'empleo.xlsx',
+        'categoria': 'tasas-de-actividad-empleo-y-desocupacion',
+        # build_macro_data.parse_empleo() lee hoja 'ETOI_O_TG1'
+        'slug_re':   r'tasas-de-actividad-empleo-desocupacion-subocupacion-horaria',
     },
 ]
 
