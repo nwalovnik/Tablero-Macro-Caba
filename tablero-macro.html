@@ -566,7 +566,7 @@ tr:last-child td{border-bottom:none}
       <div class="ch tall"><canvas id="chVac"></canvas></div>
     </div>
     <div class="card">
-      <div class="card-hd"><div><h3>Mercado de trabajo · ETOI</h3><div class="card-sub">Tasas de actividad y empleo (%)</div></div><span class="card-tag" id="tagEmp">—</span></div>
+      <div class="card-hd"><div><h3>Mercado de trabajo · ETOI</h3><div class="card-sub">Tasas de actividad, empleo y desocupación (%)</div></div><span class="card-tag" id="tagEmp">—</span></div>
       <div class="ch"><canvas id="chEmp"></canvas></div>
     </div>
   </div>
@@ -891,15 +891,20 @@ new Chart(document.getElementById('chVac'),{
   options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:10}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+(c.parsed.y==null?'—':c.parsed.y.toFixed(1)+'%')}}},scales:{y:{ticks:{callback:v=>v+'%'}}}}
 });
 
-// === Empleo: actividad y empleo trimestral ===
+// === Empleo: actividad, empleo y desocupación trimestral ===
 const empLabels = emp.trimestres.map(trimLabel);
 new Chart(document.getElementById('chEmp'),{
   type:'line',
   data:{labels:empLabels,datasets:[
-    {label:'Actividad',data:emp.actividad,borderColor:NAVY,backgroundColor:'rgba(12,35,64,.05)',fill:false,tension:.25,pointRadius:2},
-    {label:'Empleo',data:emp.empleo,borderColor:BLUE,backgroundColor:'rgba(27,110,194,.08)',fill:false,tension:.25,pointRadius:2}
+    {label:'Actividad',data:emp.actividad,borderColor:NAVY,backgroundColor:'rgba(12,35,64,.05)',fill:false,tension:.25,pointRadius:2,yAxisID:'y'},
+    {label:'Empleo',data:emp.empleo,borderColor:BLUE,backgroundColor:'rgba(27,110,194,.08)',fill:false,tension:.25,pointRadius:2,yAxisID:'y'},
+    {label:'Desocupación',data:emp.desocupacion,borderColor:'#E84A5F',backgroundColor:'rgba(232,74,95,.10)',fill:false,tension:.25,pointRadius:2,borderDash:[4,3],yAxisID:'y2'}
   ]},
-  options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:c=>c.dataset.label+': '+(c.parsed.y==null?'—':c.parsed.y.toFixed(1).replace('.',',')+'%')}}},scales:{y:{ticks:{callback:v=>v+'%'}},x:{ticks:{font:{size:9},autoSkip:true,maxTicksLimit:14,maxRotation:45,minRotation:45}}}}
+  options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:c=>c.dataset.label+': '+(c.parsed.y==null?'—':c.parsed.y.toFixed(1).replace('.',',')+'%')}}},scales:{
+    y:{position:'left',ticks:{callback:v=>v+'%'},title:{display:true,text:'Actividad / Empleo',color:'#6B7280',font:{size:10}}},
+    y2:{position:'right',ticks:{callback:v=>v+'%',color:'#E84A5F'},grid:{drawOnChartArea:false},title:{display:true,text:'Desocupación',color:'#E84A5F',font:{size:10}}},
+    x:{ticks:{font:{size:9},autoSkip:true,maxTicksLimit:14,maxRotation:45,minRotation:45}}
+  }}
 });
 document.getElementById('tagEmp').textContent = empTrim;
 
@@ -1852,13 +1857,19 @@ window.reRenderEmpleo = function() {
   _rek('chEmp', {type:'line',
     data:{labels:emp.trimestres.map(tL), datasets:[
       {label:'Actividad',data:emp.actividad,borderColor:'#0C2340',
-       backgroundColor:'rgba(12,35,64,.05)',fill:false,tension:.25,pointRadius:2},
+       backgroundColor:'rgba(12,35,64,.05)',fill:false,tension:.25,pointRadius:2,yAxisID:'y'},
       {label:'Empleo',data:emp.empleo,borderColor:'#1B6EC2',
-       backgroundColor:'rgba(27,110,194,.08)',fill:false,tension:.25,pointRadius:2},
+       backgroundColor:'rgba(27,110,194,.08)',fill:false,tension:.25,pointRadius:2,yAxisID:'y'},
+      {label:'Desocupación',data:emp.desocupacion,borderColor:'#E84A5F',
+       backgroundColor:'rgba(232,74,95,.10)',fill:false,tension:.25,pointRadius:2,borderDash:[4,3],yAxisID:'y2'},
     ]},
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:c=>c.dataset.label+': '+(c.parsed.y==null?'—':c.parsed.y.toFixed(1).replace('.',',')+'%')}}},
-      scales:{y:{ticks:{callback:v=>v+'%'}},x:{ticks:{font:{size:9},autoSkip:true,maxTicksLimit:14,maxRotation:45,minRotation:45}}}},
+      scales:{
+        y:{position:'left',ticks:{callback:v=>v+'%'},title:{display:true,text:'Actividad / Empleo',color:'#6B7280',font:{size:10}}},
+        y2:{position:'right',ticks:{callback:v=>v+'%',color:'#E84A5F'},grid:{drawOnChartArea:false},title:{display:true,text:'Desocupación',color:'#E84A5F',font:{size:10}}},
+        x:{ticks:{font:{size:9},autoSkip:true,maxTicksLimit:14,maxRotation:45,minRotation:45}}
+      }},
   });
   const tagEmp = document.getElementById('tagEmp');
   if (tagEmp) tagEmp.textContent = emp.trimestres.at(-1) || '';
