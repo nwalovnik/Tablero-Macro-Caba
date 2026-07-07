@@ -357,6 +357,14 @@ def main():
             pgb['pesos_ultimo'] = pesos
             pgb['nivel_total_ultimo'] = total_q
             pgb['nivel_trim'] = pgb_nivel['trimestres'][last_idx]['label']
+            # Serie completa de niveles trimestrales del total, útil para calcular
+            # variación trim/trim y i.a. desde el HTML sin volver a bajar XLSX.
+            pgb['nivel_total_serie'] = [
+                {'trim': pgb_nivel['trimestres'][i]['label'],
+                 'nivel': pgb_nivel['pgb_total']['valores'][i]}
+                for i in range(len(pgb_nivel['trimestres']))
+                if pgb_nivel['pgb_total']['valores'][i] is not None
+            ]
 
     macro['pgb'] = pgb
     if 'iae' in macro:
