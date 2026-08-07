@@ -1,7 +1,11 @@
 name: Actualizacion Automatica de Datos
 on:
   schedule:
-    - cron: '0 13 * * *'
+    # 20:30 UTC = 17:30 ART. IDECBA publica alrededor de las 16hs (IPCBA, canastas,
+    # ejes comerciales), asi que a las 17:30 el dato del dia ya esta arriba.
+    # Antes corria 13:00 UTC (10:00 ART) y perdia las publicaciones del propio dia:
+    # el IPCBA de julio 2026 salio el 07/08 y el tablero quedo mostrando junio.
+    - cron: '30 20 * * *'
   workflow_dispatch:
 
 jobs:
