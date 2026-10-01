@@ -1205,9 +1205,15 @@ const __EJES_COORDS_LEGACY = {
   };
   const colorDes = v => v==null ? '#9CA3AF' : v<5 ? '#0A8A5A' : v<10 ? '#6AADE4' : v<15 ? '#C06A00' : '#C0392B';
 
-  const mapC = L.map('mapComuna', {scrollWheelZoom:false}).setView([-34.6100,-58.4400], 11.5);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-    {attribution:'© OpenStreetMap © CARTO', maxZoom:18}).addTo(mapC);
+  const mapC = L.map('mapComuna', {scrollWheelZoom:false, zoomSnap:0.25}).setView([-34.6100,-58.4400], 11.5);
+  // Radio de los círculos proporcional al zoom (pensado para zoom 12) para que no se pisen
+  const escalaR = () => Math.max(0.4, Math.min(1.5, Math.pow(2, mapC.getZoom() - 12)));
+  mapC.on('zoomend', () => markersLayer.eachLayer(m => m.setRadius(m.options.r0 * escalaR())));
+  // Fondo Esri Light Gray (gratis, sin clave). Carto pasó a exigir API key en oct-2026.
+  const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/';
+  L.tileLayer(ESRI + 'World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    {attribution:'Tiles © Esri — Esri, HERE, Garmin, © OpenStreetMap', maxZoom:16}).addTo(mapC);
+  L.tileLayer(ESRI + 'World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {maxZoom:16}).addTo(mapC);
 
   // Capa de markers que se redibuja al cambiar cuatrimestre
   let markersLayer = L.layerGroup().addTo(mapC);
@@ -1237,7 +1243,7 @@ const __EJES_COORDS_LEGACY = {
         (varIA != null ? `<br><span style="font-size:10.5px;color:${varIA<=0?'#0A8A5A':'#C0392B'}">Var. i.a. tasa ocup.: ${varIA>=0?'+':''}${varIA.toFixed(1).replace('.',',')} pp</span>` : '') +
         (dens != null ? `<br><span style="font-size:10.5px;color:#6B7280">Densidad comercial: ${dens.toFixed(1).replace('.',',')} locales/100m</span>` : '');
       L.circleMarker(ll, {
-        radius: r, fillColor: colorDes(desoc), color: '#fff', weight: 2, fillOpacity: .82
+        radius: r * escalaR(), r0: r, fillColor: colorDes(desoc), color: '#fff', weight: 2, fillOpacity: .82
       }).bindPopup(popup).addTo(markersLayer);
       n++;
     });
@@ -1252,6 +1258,16 @@ const __EJES_COORDS_LEGACY = {
   sel.addEventListener('change', e => renderForPeriodo(e.target.value));
   renderForPeriodo(periodosDesc[0]);
   setTimeout(() => mapC.invalidateSize(), 200);
+  // El mapa se crea con su pestaña oculta (tamaño 0): al mostrarse, recalcular
+  // tamaño y encuadrar la Ciudad para que los círculos no queden amontonados.
+  const CABA_BOUNDS = [[-34.705, -58.531], [-34.527, -58.335]];
+  let mapCVisto = false;
+  new ResizeObserver(() => {
+    const el = document.getElementById('mapComuna');
+    if (!el.offsetWidth || !el.offsetHeight) return;
+    mapC.invalidateSize();
+    if (!mapCVisto) { mapCVisto = true; mapC.fitBounds(CABA_BOUNDS, {padding: [10, 10]}); }
+  }).observe(document.getElementById('mapComuna'));
 })();
 
 // === Calendario de publicaciones (datos inline + refresh en vivo) ===
