@@ -4,7 +4,7 @@ y reemplaza el const MACRO = {...} dentro de tablero-macro.html.
 Ejecutar luego de build_macro_data.py + build_calendario.py.
 Pensado para el Task Scheduler de Windows o cron.
 """
-import json, os, re, sys, time
+import json, os, re, subprocess, sys, time
 import requests
 from io import BytesIO
 import openpyxl
@@ -19,12 +19,29 @@ H = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
      'Accept': 'application/json,text/html,*/*'}
 WP_REST = 'https://www.estadisticaciudad.gob.ar/eyc/wp-json/wp/v2/banco_datos'
 
+# ─── GET con reintentos ────────────────────────────────────────────
+# El sitio de IDECBA a veces no responde por unos minutos (timeouts de
+# conexión/lectura). Se reintenta con espera creciente antes de rendirse.
+def get(url, timeout=60, intentos=3, **kw):
+    for i in range(1, intentos + 1):
+        try:
+            r = requests.get(url, headers=H, timeout=timeout, **kw)
+            if r.status_code >= 500:
+                raise requests.HTTPError(f'HTTP {r.status_code}')
+            return r
+        except (requests.ConnectionError, requests.Timeout, requests.HTTPError) as e:
+            if i == intentos:
+                raise
+            espera = 30 * i
+            print(f'  intento {i}/{intentos} falló ({e.__class__.__name__}); reintento en {espera}s', flush=True)
+            time.sleep(espera)
+
 # ─── Helpers de descubrimiento de URL XLSX ─────────────────────────
 def find_xlsx_for_search(query):
     """Busca un dataset por query en banco_datos y devuelve la URL del XLSX adjunto.
     Devuelve (None,None) si la API falla — el caller usa la URL fallback hardcoded."""
     try:
-        r = requests.get(WP_REST, params={'search': query, 'per_page': 5}, headers=H, timeout=30)
+        r = get(WP_REST, timeout=(20, 45), params={'search': query, 'per_page': 5})
         if r.status_code != 200:
             print(f'  WP REST devolvió {r.status_code}, usando fallback', flush=True)
             return None, None
@@ -36,7 +53,7 @@ def find_xlsx_for_search(query):
         link = post.get('link')
         if not link: continue
         try:
-            html = requests.get(link, headers=H, timeout=30).text
+            html = get(link, timeout=(20, 45)).text
         except Exception:
             continue
         m = re.search(r'href="(https://www\.estadisticaciudad\.gob\.ar/eyc/wp-content/uploads/[^"]+\.xlsx)"', html, re.I)
@@ -44,8 +61,11 @@ def find_xlsx_for_search(query):
     return None, None
 
 def download_xlsx(url):
-    r = requests.get(url, headers=H, timeout=60)
-    r.raise_for_status()
+    # allow_redirects=False: si el archivo ya no existe, IDECBA redirige a la
+    # portada (http) en vez de dar 404; mejor fallar rápido y usar el respaldo.
+    r = get(url, timeout=(20, 90), allow_redirects=False)
+    if r.status_code != 200:
+        raise RuntimeError(f'{url} devolvió {r.status_code} (archivo movido o inexistente)')
     return openpyxl.load_workbook(BytesIO(r.content), data_only=True)
 
 # ─── PGB · variación porcentual i.a. por categoría ClaNAE ─────────
@@ -53,7 +73,7 @@ def parse_pgb_variacion():
     print('[PGB var] descubriendo URL...', flush=True)
     url, title = find_xlsx_for_search('variacion porcentual producto geografico bruto trimestral')
     if not url:
-        url = 'https://www.estadisticaciudad.gob.ar/eyc/wp-content/uploads/2025/12/PGB_K_variacion_porcentual.xlsx'
+        url = 'https://www.estadisticaciudad.gob.ar/eyc/wp-content/uploads/2026/03/PGB_K_variacion_porcentual.xlsx'
         title = 'Variación porcentual i.a. del PGB Trimestral por ClaNAE (fallback)'
     print(f'[PGB var] {url}', flush=True)
     wb = download_xlsx(url)
@@ -122,7 +142,7 @@ def parse_pgb_nivel():
     print('[PGB nivel] descubriendo URL...', flush=True)
     url, title = find_xlsx_for_search('producto geografico bruto trimestral millones pesos 2004 ClaNAE')
     if not url:
-        url = 'https://www.estadisticaciudad.gob.ar/eyc/wp-content/uploads/2025/09/PGB_K_Trimestral.xlsx'
+        url = 'https://www.estadisticaciudad.gob.ar/eyc/wp-content/uploads/2026/03/PGB_K_Trimestral.xlsx'
         title = 'PGB Trimestral en millones de pesos a precios de 2004 (fallback)'
     print(f'[PGB nivel] {url}', flush=True)
     wb = download_xlsx(url)
@@ -183,7 +203,7 @@ def parse_ipcba_rubros():
     print('[IPCBA rubros] descubriendo URL...', flush=True)
     url, title = find_xlsx_for_search('IPCBA aperturas indice mensual')
     if not url:
-        url = 'https://www.estadisticaciudad.gob.ar/eyc/wp-content/uploads/2026/02/IPCBA_base_2021100-Principales_aperturas_indices.xlsx'
+        url = 'https://www.estadisticaciudad.gob.ar/eyc/wp-content/uploads/2026/07/IPCBA_base_2021100-Principales_aperturas_indices.xlsx'
         title = 'IPCBA por aperturas (fallback)'
     print(f'[IPCBA rubros] {url}', flush=True)
     
@@ -306,6 +326,17 @@ def patch_html(html_path, macro):
         f.write(new)
     print(f'  patched -> {os.path.basename(html_path)} ({len(inline):,} bytes inline)', flush=True)
 
+def macro_publicado():
+    """macro_data.json tal como está en el último commit (antes de que
+    build_macro_data.py lo regenere sin los bloques de este script)."""
+    try:
+        out = subprocess.run(['git', 'show', 'HEAD:macro_data.json'], cwd=BASE,
+                             capture_output=True, check=True).stdout
+        return json.loads(out.decode('utf-8'))
+    except Exception as e:
+        print(f'  (sin macro_data.json previo en git: {e})', flush=True)
+        return {}
+
 # ─── Main ──────────────────────────────────────────────────────────
 def main():
     if not os.path.exists(MACRO_JSON):
@@ -313,86 +344,109 @@ def main():
     with open(MACRO_JSON, 'r', encoding='utf-8') as f:
         macro = json.load(f)
 
+    # Último macro_data.json publicado: respaldo si IDECBA no responde
+    prev = macro_publicado()
+
     # PGB var i.a.
-    pgb_var = parse_pgb_variacion()
-    pgb_nivel = None
     try:
-        pgb_nivel = parse_pgb_nivel()
+        pgb_var = parse_pgb_variacion()
     except Exception as e:
-        print(f'[PGB nivel] falló (no es crítico): {e}', flush=True)
-    pesos_previos = None
-    if not pgb_nivel and macro.get('pgb', {}).get('pesos_ultimo'):
-        pesos_previos = {
-            'pesos_ultimo': macro['pgb'].get('pesos_ultimo'),
-            'nivel_total_ultimo': macro['pgb'].get('nivel_total_ultimo'),
-            'nivel_trim': macro['pgb'].get('nivel_trim'),
+        if not prev.get('pgb'):
+            raise
+        print(f'[PGB var] AVISO: falló ({e}); se conserva el PGB publicado ({prev["pgb"].get("ultimo_trim")})', flush=True)
+        pgb_var = None
+    if pgb_var is None:
+        macro['pgb'] = prev['pgb']
+        for k in ('actividad', '_iae_legacy'):
+            if k in prev:
+                macro[k] = prev[k]
+        if 'iae' in macro:
+            macro['_iae_legacy'] = macro.pop('iae')
+    else:
+        pgb_nivel = None
+        try:
+            pgb_nivel = parse_pgb_nivel()
+        except Exception as e:
+            print(f'[PGB nivel] falló (no es crítico): {e}', flush=True)
+        pesos_previos = None
+        if not pgb_nivel and prev.get('pgb', {}).get('pesos_ultimo'):
+            pesos_previos = {
+                'pesos_ultimo': prev['pgb'].get('pesos_ultimo'),
+                'nivel_total_ultimo': prev['pgb'].get('nivel_total_ultimo'),
+                'nivel_trim': prev['pgb'].get('nivel_trim'),
+            }
+            print(f'[PGB nivel] conservando pesos previos ({len(pesos_previos["pesos_ultimo"])} sectores)', flush=True)
+
+        pgb = {
+            'fuente': pgb_var['fuente'],
+            'titulo_dataset': pgb_var.get('titulo_dataset'),
+            'trimestres': pgb_var['trimestres'],
+            'pgb_total': pgb_var['pgb_total'],
+            'categorias': pgb_var['categorias'],
+            'ultimo_trim': pgb_var['ultimo_trim'],
+            'ultimo_var_ia': pgb_var['ultimo_var_ia'],
+            'prev_var_ia': pgb_var['prev_var_ia'],
+            'sectores_ultimo': pgb_var['sectores_ultimo'],
         }
-        print(f'[PGB nivel] conservando pesos previos ({len(pesos_previos["pesos_ultimo"])} sectores)', flush=True)
+        if pesos_previos:
+            pgb.update(pesos_previos)
+        if pgb_nivel:
+            last_idx = len(pgb_nivel['trimestres']) - 1
+            while last_idx >= 0 and (pgb_nivel['pgb_total'] is None or pgb_nivel['pgb_total']['valores'][last_idx] is None):
+                last_idx -= 1
+            if last_idx >= 0 and pgb_nivel['pgb_total']:
+                total_q = pgb_nivel['pgb_total']['valores'][last_idx]
+                pesos = []
+                for c in pgb_nivel['categorias']:
+                    v = c['valores'][last_idx] if last_idx < len(c['valores']) else None
+                    if v and total_q:
+                        pesos.append({'nombre': c['nombre'], 'nivel': v, 'peso': round(v/total_q*100, 2)})
+                pesos.sort(key=lambda x: -x['peso'])
+                pgb['pesos_ultimo'] = pesos
+                pgb['nivel_total_ultimo'] = total_q
+                pgb['nivel_trim'] = pgb_nivel['trimestres'][last_idx]['label']
+                # Serie completa de niveles trimestrales del total, útil para calcular
+                # variación trim/trim y i.a. desde el HTML sin volver a bajar XLSX.
+                pgb['nivel_total_serie'] = [
+                    {'trim': pgb_nivel['trimestres'][i]['label'],
+                     'nivel': pgb_nivel['pgb_total']['valores'][i]}
+                    for i in range(len(pgb_nivel['trimestres']))
+                    if pgb_nivel['pgb_total']['valores'][i] is not None
+                ]
 
-    pgb = {
-        'fuente': pgb_var['fuente'],
-        'titulo_dataset': pgb_var.get('titulo_dataset'),
-        'trimestres': pgb_var['trimestres'],
-        'pgb_total': pgb_var['pgb_total'],
-        'categorias': pgb_var['categorias'],
-        'ultimo_trim': pgb_var['ultimo_trim'],
-        'ultimo_var_ia': pgb_var['ultimo_var_ia'],
-        'prev_var_ia': pgb_var['prev_var_ia'],
-        'sectores_ultimo': pgb_var['sectores_ultimo'],
-    }
-    if pesos_previos:
-        pgb.update(pesos_previos)
-    if pgb_nivel:
-        last_idx = len(pgb_nivel['trimestres']) - 1
-        while last_idx >= 0 and (pgb_nivel['pgb_total'] is None or pgb_nivel['pgb_total']['valores'][last_idx] is None):
-            last_idx -= 1
-        if last_idx >= 0 and pgb_nivel['pgb_total']:
-            total_q = pgb_nivel['pgb_total']['valores'][last_idx]
-            pesos = []
-            for c in pgb_nivel['categorias']:
-                v = c['valores'][last_idx] if last_idx < len(c['valores']) else None
-                if v and total_q:
-                    pesos.append({'nombre': c['nombre'], 'nivel': v, 'peso': round(v/total_q*100, 2)})
-            pesos.sort(key=lambda x: -x['peso'])
-            pgb['pesos_ultimo'] = pesos
-            pgb['nivel_total_ultimo'] = total_q
-            pgb['nivel_trim'] = pgb_nivel['trimestres'][last_idx]['label']
-            # Serie completa de niveles trimestrales del total, útil para calcular
-            # variación trim/trim y i.a. desde el HTML sin volver a bajar XLSX.
-            pgb['nivel_total_serie'] = [
-                {'trim': pgb_nivel['trimestres'][i]['label'],
-                 'nivel': pgb_nivel['pgb_total']['valores'][i]}
-                for i in range(len(pgb_nivel['trimestres']))
-                if pgb_nivel['pgb_total']['valores'][i] is not None
-            ]
-
-    macro['pgb'] = pgb
-    if 'iae' in macro:
-        macro['_iae_legacy'] = macro.pop('iae')
-    trims_lbl = [t['label'] for t in pgb['trimestres']]
-    var_ia = pgb['pgb_total']['valores']
-    idx = []
-    base = None
-    for v in var_ia:
-        if v is None:
-            idx.append(None); continue
-        if base is None:
-            base = 100.0
-            idx.append(round(base, 2))
-        else:
-            prev_idx = next((x for x in reversed(idx) if x is not None), None)
-            if prev_idx is None:
-                idx.append(round(100.0, 2))
+        macro['pgb'] = pgb
+        if 'iae' in macro:
+            macro['_iae_legacy'] = macro.pop('iae')
+        trims_lbl = [t['label'] for t in pgb['trimestres']]
+        var_ia = pgb['pgb_total']['valores']
+        idx = []
+        base = None
+        for v in var_ia:
+            if v is None:
+                idx.append(None); continue
+            if base is None:
+                base = 100.0
+                idx.append(round(base, 2))
             else:
-                idx.append(round(prev_idx * (1 + (v - (var_ia[var_ia.index(v)-1] if var_ia.index(v) > 0 and var_ia[var_ia.index(v)-1] is not None else 0))/100), 2))
-    macro['actividad'] = {
-        'trimestres': trims_lbl,
-        'var_ia': var_ia,
-        'fuente': 'PGB · IDECBA',
-    }
+                prev_idx = next((x for x in reversed(idx) if x is not None), None)
+                if prev_idx is None:
+                    idx.append(round(100.0, 2))
+                else:
+                    idx.append(round(prev_idx * (1 + (v - (var_ia[var_ia.index(v)-1] if var_ia.index(v) > 0 and var_ia[var_ia.index(v)-1] is not None else 0))/100), 2))
+        macro['actividad'] = {
+            'trimestres': trims_lbl,
+            'var_ia': var_ia,
+            'fuente': 'PGB · IDECBA',
+        }
 
     # IPCBA rubros
-    rubros = parse_ipcba_rubros()
+    try:
+        rubros = parse_ipcba_rubros()
+    except Exception as e:
+        rubros = (prev.get('ipcba') or {}).get('rubros')
+        if not rubros:
+            raise
+        print(f'[IPCBA rubros] AVISO: falló ({e}); se conservan los rubros publicados ({rubros.get("periodo")})', flush=True)
     macro.setdefault('ipcba', {})['rubros'] = rubros
 
     # Industria pesos
@@ -404,7 +458,7 @@ def main():
 
     with open(MACRO_JSON, 'w', encoding='utf-8') as f:
         json.dump(macro, f, ensure_ascii=False, separators=(',', ':'))
-    print(f'OK macro_data.json actualizado (PGB {len(pgb["categorias"])} cats; IPCBA rubros {len(rubros["divisiones"])}; industria pesos {len((ipesos or {}).get("pesos") or {})})', flush=True)
+    print(f'OK macro_data.json actualizado (PGB {len(macro["pgb"]["categorias"])} cats; IPCBA rubros {len(rubros["divisiones"])}; industria pesos {len((ipesos or {}).get("pesos") or {})})', flush=True)
 
     for h in HTML_FILES:
         patch_html(h, macro)
